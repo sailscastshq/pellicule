@@ -1,6 +1,6 @@
 {
   "name": "@pellicule/cli",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "CLI for Pellicule - render Vue components to video",
   "type": "module",
   "bin": {

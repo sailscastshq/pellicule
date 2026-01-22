@@ -1,9 +1,15 @@
 #!/usr/bin/env node
 
 import { parseArgs } from 'node:util'
-import { resolve, extname, basename } from 'node:path'
-import { existsSync } from 'node:fs'
+import { resolve, extname, basename, dirname } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { renderToMp4 } from 'pellicule/render'
+
+// Read version from package.json
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8'))
+const VERSION = pkg.version
 
 // ANSI color codes (no dependencies needed)
 const colors = {
@@ -32,8 +38,6 @@ const c = {
   highlight: (s) => `${colors.pellicule}${s}${colors.reset}`,
   brand: (s) => `${colors.bgPellicule}${colors.white}${colors.bold}${s}${colors.reset}`
 }
-
-const VERSION = '0.0.0'
 
 const HELP = `
 ${c.bold('pellicule')} ${c.dim(`v${VERSION}`)} - Render Vue components to video

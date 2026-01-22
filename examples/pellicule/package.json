@@ -1,0 +1,12 @@
+{
+  "name": "pellicule-example-product-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "npx pellicule Video -d 780 -o pellicule-intro.mp4"
+  },
+  "dependencies": {
+    "pellicule": "file:../../packages/core",
+    "vue": "^3.4.0"
+  }
+}

@@ -1,0 +1,6 @@
+node_modules
+.pellicule
+frames
+*.mp4
+RESEARCH.md
+.DS_Store

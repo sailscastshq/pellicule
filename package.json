@@ -1,0 +1,11 @@
+{
+  "name": "pellicule-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "pellicule": "node packages/cli/src/index.js",
+    "example:pellicule": "cd examples/pellicule && npm run render"
+  }
+}

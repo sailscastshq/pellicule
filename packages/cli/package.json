@@ -1,0 +1,21 @@
+{
+  "name": "@pellicule/cli",
+  "version": "0.0.0",
+  "description": "CLI for Pellicule - render Vue components to video",
+  "type": "module",
+  "bin": {
+    "pellicule": "./src/index.js"
+  },
+  "keywords": [
+    "vue",
+    "video",
+    "rendering",
+    "cli",
+    "pellicule"
+  ],
+  "author": "Kelvin Omereshone <kelvin@sailscasts.com>",
+  "license": "MIT",
+  "dependencies": {
+    "pellicule": "*"
+  }
+}

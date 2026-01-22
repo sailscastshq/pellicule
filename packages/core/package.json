@@ -1,6 +1,6 @@
 {
   "name": "pellicule",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Deterministic video rendering with Vue",
   "type": "module",
   "main": "./src/index.js",

@@ -43,7 +43,8 @@ const HELP = `
 ${c.bold('pellicule')} ${c.dim(`v${VERSION}`)} - Render Vue components to video
 
 ${c.bold('USAGE')}
-  ${c.highlight('pellicule')} <input.vue>                ${c.dim('→ outputs ./output.mp4')}
+  ${c.highlight('pellicule')}                            ${c.dim('→ renders Video.vue to output.mp4')}
+  ${c.highlight('pellicule')} <input.vue>                ${c.dim('→ custom input file')}
   ${c.highlight('pellicule')} <input.vue> -o <file>      ${c.dim('→ custom output path')}
 
 ${c.bold('OPTIONS')}
@@ -56,10 +57,13 @@ ${c.bold('OPTIONS')}
   ${c.info('--version')}               Show version number
 
 ${c.bold('EXAMPLES')}
-  ${c.dim('# Render with defaults (90 frames at 30fps = 3 seconds)')}
-  ${c.highlight('pellicule')} Video           ${c.dim('# .vue extension is optional')}
+  ${c.dim('# Zero-config (renders Video.vue → output.mp4)')}
+  ${c.highlight('pellicule')}
 
-  ${c.dim('# Specify output and duration')}
+  ${c.dim('# Specify input file (.vue extension is optional)')}
+  ${c.highlight('pellicule')} MyVideo
+
+  ${c.dim('# Custom output and duration')}
   ${c.highlight('pellicule')} Video.vue -o intro.mp4 -d 150
 
   ${c.dim('# 4K video at 60fps')}
@@ -123,14 +127,8 @@ async function main() {
     process.exit(0)
   }
 
-  // Validate input
-  const input = positionals[0]
-  if (!input) {
-    console.error(c.error('\nError: Missing input file\n'))
-    console.log(`Usage: ${c.highlight('pellicule')} <input.vue> [options]`)
-    console.log(`Run ${c.info('pellicule --help')} for more information.\n`)
-    process.exit(1)
-  }
+  // Default to Video.vue if no input provided
+  const input = positionals[0] || 'Video.vue'
 
   // Try to resolve the input file, auto-appending .vue if needed
   let inputPath = resolve(input)

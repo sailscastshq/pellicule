@@ -6,17 +6,13 @@
  */
 
 // Composables
-export {
-  useFrame,
-  useVideoConfig,
-  useSequence,
-  FRAME_KEY,
-  CONFIG_KEY,
-  SEQUENCE_KEY
-} from './composables.js'
+export { useFrame } from './composables/frame.js'
+export { useVideoConfig } from './composables/video-config.js'
+export { useSequence } from './composables/sequence.js'
+export { FRAME_KEY, CONFIG_KEY, SEQUENCE_KEY } from './composables/keys.js'
 
 // Components
-export { default as Sequence } from './Sequence.vue'
+export { default as Sequence } from './components/Sequence.vue'
 
 // Animation utilities
-export { interpolate, sequence, Easing } from './math.js'
+export { interpolate, sequence, Easing } from './utils/math.js'

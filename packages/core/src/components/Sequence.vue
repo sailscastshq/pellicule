@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
-import { useFrame, provideSequence } from './composables.js'
+import { useFrame } from '../composables/frame.js'
+import { provideSequence } from '../composables/sequence.js'
 
 const props = defineProps({
   /**

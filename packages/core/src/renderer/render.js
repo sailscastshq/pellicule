@@ -9,7 +9,9 @@ import { join } from 'path'
  * @param {object} options
  * @param {string} options.input - Path to the .vue file
  * @param {number} options.fps - Frames per second (default: 30)
- * @param {number} options.durationInFrames - Total frames to render
+ * @param {number} options.durationInFrames - Total frames in the video (for animation calculations)
+ * @param {number} options.startFrame - First frame to render (default: 0)
+ * @param {number} options.endFrame - Last frame to render, exclusive (default: durationInFrames)
  * @param {number} options.width - Video width in pixels (default: 1920)
  * @param {number} options.height - Video height in pixels (default: 1080)
  * @param {string} options.outputDir - Directory for frame images (default: './frames')
@@ -21,12 +23,18 @@ export async function renderVideo(options) {
     input,
     fps = 30,
     durationInFrames,
+    startFrame = 0,
+    endFrame,
     width = 1920,
     height = 1080,
     outputDir = './frames',
     onProgress,
     silent = false
   } = options
+
+  // Calculate actual frame range to render
+  const actualEndFrame = endFrame !== undefined ? endFrame : durationInFrames
+  const framesToRender = actualEndFrame - startFrame
 
   const log = silent ? () => {} : console.log.bind(console)
 
@@ -62,10 +70,13 @@ export async function renderVideo(options) {
     }
   })
 
-  log(`Rendering ${durationInFrames} frames at ${fps}fps (${width}x${height})`)
+  const rangeInfo = startFrame > 0 || actualEndFrame < durationInFrames
+    ? ` (frames ${startFrame}-${actualEndFrame - 1})`
+    : ''
+  log(`Rendering ${framesToRender} frames at ${fps}fps (${width}x${height})${rangeInfo}`)
 
   try {
-    // Load page ONCE with config
+    // Load page ONCE with config (durationInFrames stays full for correct animation calculations)
     const pageUrl = `${url}?fps=${fps}&duration=${durationInFrames}&width=${width}&height=${height}`
     await page.goto(pageUrl, { waitUntil: 'networkidle' })
 
@@ -80,33 +91,36 @@ export async function renderVideo(options) {
 
     const renderStart = Date.now()
 
-    // Render each frame by updating the frame ref (no page reload!)
-    for (let frame = 0; frame < durationInFrames; frame++) {
+    // Render each frame in the specified range
+    for (let frame = startFrame; frame < actualEndFrame; frame++) {
       // Update frame number - Vue reactivity handles re-render
       await page.evaluate((f) => window.__PELLICULE_SET_FRAME__(f), frame)
 
-      // Screenshot
-      const framePath = join(outputDir, `frame-${String(frame).padStart(5, '0')}.png`)
+      // Screenshot - output frames are numbered from 0
+      const outputFrameNum = frame - startFrame
+      const framePath = join(outputDir, `frame-${String(outputFrameNum).padStart(5, '0')}.png`)
       await page.screenshot({ path: framePath })
 
       // Progress callback
       if (onProgress) {
         const elapsed = Date.now() - renderStart
-        const currentFps = (frame + 1) / (elapsed / 1000)
-        onProgress({ frame, total: durationInFrames, fps: currentFps })
+        const framesRendered = outputFrameNum + 1
+        const currentFps = framesRendered / (elapsed / 1000)
+        onProgress({ frame: outputFrameNum, total: framesToRender, fps: currentFps })
       }
 
       // Log progress every 10 frames
-      if (frame % 10 === 0 || frame === durationInFrames - 1) {
-        const percent = Math.round(((frame + 1) / durationInFrames) * 100)
+      const outputFrameIndex = frame - startFrame
+      if (outputFrameIndex % 10 === 0 || frame === actualEndFrame - 1) {
+        const percent = Math.round(((outputFrameIndex + 1) / framesToRender) * 100)
         const elapsed = Date.now() - renderStart
-        const framesPerSec = ((frame + 1) / (elapsed / 1000)).toFixed(1)
-        log(`Frame ${frame + 1}/${durationInFrames} (${percent}%) - ${framesPerSec} fps`)
+        const framesPerSec = ((outputFrameIndex + 1) / (elapsed / 1000)).toFixed(1)
+        log(`Frame ${outputFrameIndex + 1}/${framesToRender} (${percent}%) - ${framesPerSec} fps`)
       }
     }
 
     const renderTime = Date.now() - renderStart
-    log(`Rendered ${durationInFrames} frames in ${renderTime}ms (${(durationInFrames / (renderTime / 1000)).toFixed(1)} fps)`)
+    log(`Rendered ${framesToRender} frames in ${renderTime}ms (${(framesToRender / (renderTime / 1000)).toFixed(1)} fps)`)
 
   } finally {
     await browser.close()
@@ -116,5 +130,5 @@ export async function renderVideo(options) {
   log(`Total time: ${Date.now() - startTime}ms`)
   log(`Frames saved to ${outputDir}`)
 
-  return { framesDir: outputDir, totalFrames: durationInFrames }
+  return { framesDir: outputDir, totalFrames: framesToRender }
 }

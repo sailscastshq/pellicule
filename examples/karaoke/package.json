@@ -1,0 +1,12 @@
+{
+  "name": "pellicule-karaoke-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "npx pellicule Video.vue -d 300 -o karaoke-demo.mp4"
+  },
+  "dependencies": {
+    "pellicule": "*",
+    "vue": "^3.5.13"
+  }
+}

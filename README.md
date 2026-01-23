@@ -2,6 +2,8 @@
 
 Deterministic video rendering with Vue.
 
+<video src=".github/pellicule.mp4" autoplay loop muted playsinline></video>
+
 Write Vue components. Render videos.
 
 ## Installation

@@ -17,26 +17,27 @@ const colors = {
   bold: '\x1b[1m',
   dim: '\x1b[2m',
   red: '\x1b[31m',
-  green: '\x1b[32m',
   yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-  magenta: '\x1b[35m',
   cyan: '\x1b[36m',
   white: '\x1b[37m',
-  // Pellicule/Vue green (#42b883) as true color
-  pellicule: '\x1b[38;2;66;184;131m',
+  pellicule: '\x1b[38;2;66;184;131m', // #42b883 - Vue green
   bgPellicule: '\x1b[48;2;66;184;131m'
 }
 
 const c = {
   error: (s) => `${colors.red}${s}${colors.reset}`,
-  success: (s) => `${colors.pellicule}${s}${colors.reset}`,
   warn: (s) => `${colors.yellow}${s}${colors.reset}`,
   info: (s) => `${colors.cyan}${s}${colors.reset}`,
   dim: (s) => `${colors.dim}${s}${colors.reset}`,
   bold: (s) => `${colors.bold}${s}${colors.reset}`,
   highlight: (s) => `${colors.pellicule}${s}${colors.reset}`,
   brand: (s) => `${colors.bgPellicule}${colors.white}${colors.bold}${s}${colors.reset}`
+}
+
+function fail(msg, hint) {
+  console.error(c.error(`\nError: ${msg}\n`))
+  if (hint) console.error(c.dim(`  ${hint}\n`))
+  process.exit(1)
 }
 
 const HELP = `
@@ -53,7 +54,8 @@ ${c.bold('OPTIONS')}
   ${c.info('-f, --fps')} <number>      Frames per second ${c.dim('(default: 30)')}
   ${c.info('-w, --width')} <pixels>    Video width ${c.dim('(default: 1920)')}
   ${c.info('-h, --height')} <pixels>   Video height ${c.dim('(default: 1080)')}
-  ${c.info('--help')}                  Show this help message
+  ${c.info('-r, --range')} <start:end> Frame range for partial render ${c.dim('(e.g., 100:200)')}
+  ${c.info('--help')}                 Show this help message
   ${c.info('--version')}               Show version number
 
 ${c.bold('EXAMPLES')}
@@ -71,6 +73,12 @@ ${c.bold('EXAMPLES')}
 
   ${c.dim('# 10 second video')}
   ${c.highlight('pellicule')} Video.vue -d 300 -f 30
+
+  ${c.dim('# Render only frames 100-200 (for faster iteration)')}
+  ${c.highlight('pellicule')} Video.vue -d 300 -r 100:200
+
+  ${c.dim('# Render from frame 150 to 250')}
+  ${c.highlight('pellicule')} Video.vue -d 300 --range 150:250
 
 ${c.bold('DURATION HELPER')}
   frames = seconds * fps
@@ -111,6 +119,7 @@ async function main() {
       fps: { type: 'string', short: 'f' },
       width: { type: 'string', short: 'w' },
       height: { type: 'string', short: 'h' },
+      range: { type: 'string', short: 'r' },
       help: { type: 'boolean' },
       version: { type: 'boolean' }
     }
@@ -140,15 +149,8 @@ async function main() {
     }
   }
 
-  if (!existsSync(inputPath)) {
-    console.error(c.error(`\nError: File not found: ${input}\n`))
-    process.exit(1)
-  }
-
-  if (extname(inputPath) !== '.vue') {
-    console.error(c.error(`\nError: Input must be a .vue file, got: ${extname(inputPath) || '(no extension)'}\n`))
-    process.exit(1)
-  }
+  if (!existsSync(inputPath)) fail(`File not found: ${input}`)
+  if (extname(inputPath) !== '.vue') fail(`Input must be a .vue file, got: ${extname(inputPath) || '(no extension)'}`)
 
   // Parse options with defaults
   const fps = parseInt(values.fps || '30', 10)
@@ -158,32 +160,43 @@ async function main() {
   const output = values.output || './output.mp4'
   const outputPath = resolve(output)
 
-  // Validate numbers
-  if (isNaN(fps) || fps <= 0) {
-    console.error(c.error(`\nError: Invalid fps value: ${values.fps}\n`))
-    process.exit(1)
+  // Parse optional range (start:end format)
+  let startFrame = 0
+  let endFrame = durationInFrames
+
+  if (values.range) {
+    const rangeParts = values.range.split(':')
+    if (rangeParts.length !== 2) fail(`Invalid range format: ${values.range}`, 'Expected format: start:end (e.g., 100:200)')
+    const [startStr, endStr] = rangeParts
+    startFrame = parseInt(startStr, 10)
+    endFrame = parseInt(endStr, 10)
+    if (isNaN(startFrame) || startFrame < 0) fail(`Invalid start frame in range: ${startStr}`)
+    if (isNaN(endFrame) || endFrame <= 0) fail(`Invalid end frame in range: ${endStr}`)
   }
-  if (isNaN(durationInFrames) || durationInFrames <= 0) {
-    console.error(c.error(`\nError: Invalid duration value: ${values.duration}\n`))
-    process.exit(1)
-  }
-  if (isNaN(width) || width <= 0) {
-    console.error(c.error(`\nError: Invalid width value: ${values.width}\n`))
-    process.exit(1)
-  }
-  if (isNaN(height) || height <= 0) {
-    console.error(c.error(`\nError: Invalid height value: ${values.height}\n`))
-    process.exit(1)
-  }
+
+  // Validate options
+  if (isNaN(fps) || fps <= 0) fail(`Invalid fps value: ${values.fps}`)
+  if (isNaN(durationInFrames) || durationInFrames <= 0) fail(`Invalid duration value: ${values.duration}`)
+  if (isNaN(width) || width <= 0) fail(`Invalid width value: ${values.width}`)
+  if (isNaN(height) || height <= 0) fail(`Invalid height value: ${values.height}`)
+  if (startFrame >= endFrame) fail(`Start frame (${startFrame}) must be less than end frame (${endFrame})`)
+  if (endFrame > durationInFrames) fail(`End frame (${endFrame}) exceeds duration (${durationInFrames})`)
 
   // Print banner and config
   printBanner()
 
+  const isPartialRender = startFrame > 0 || endFrame < durationInFrames
+  const framesToRender = endFrame - startFrame
   const durationSeconds = (durationInFrames / fps).toFixed(1)
+  const partialSeconds = (framesToRender / fps).toFixed(1)
+
   console.log(`  ${c.bold('Input')}      ${c.info(basename(inputPath))}`)
   console.log(`  ${c.bold('Output')}     ${c.info(basename(outputPath))}`)
   console.log(`  ${c.bold('Resolution')} ${width}x${height}`)
   console.log(`  ${c.bold('Duration')}   ${durationInFrames} frames @ ${fps}fps ${c.dim(`(${durationSeconds}s)`)}`)
+  if (isPartialRender) {
+    console.log(`  ${c.bold('Range')}      ${c.highlight(`frames ${startFrame}-${endFrame - 1}`)} ${c.dim(`(${framesToRender} frames, ${partialSeconds}s)`)}`)
+  }
   console.log()
 
   const startTime = Date.now()
@@ -198,6 +211,8 @@ async function main() {
       input: inputPath,
       fps,
       durationInFrames,
+      startFrame,
+      endFrame,
       width,
       height,
       output: outputPath,
@@ -213,7 +228,7 @@ async function main() {
 
     const totalTime = Date.now() - startTime
     console.log()
-    console.log(`  ${c.success('Done!')} Rendered ${durationInFrames} frames in ${formatTime(totalTime)}`)
+    console.log(`  ${c.highlight('Done!')} Rendered ${framesToRender} frames in ${formatTime(totalTime)}`)
     console.log(`  ${c.dim('Output:')} ${outputPath}`)
     console.log()
 

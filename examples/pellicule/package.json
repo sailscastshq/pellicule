@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "render": "npx pellicule Video -d 780 -o pellicule-intro.mp4"
+    "render": "npx pellicule Video.vue -d 300 -o pellicule-intro.mp4"
   },
   "dependencies": {
     "pellicule": "file:../../packages/core",

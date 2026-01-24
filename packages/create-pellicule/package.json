@@ -1,0 +1,22 @@
+{
+  "name": "create-pellicule",
+  "version": "0.0.1",
+  "description": "Scaffold a new Pellicule video project",
+  "type": "module",
+  "bin": {
+    "create-pellicule": "./src/index.js"
+  },
+  "keywords": [
+    "vue",
+    "video",
+    "rendering",
+    "pellicule",
+    "create",
+    "scaffold"
+  ],
+  "author": "Kelvin Omereshone <kelvin@sailscasts.com>",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
+}

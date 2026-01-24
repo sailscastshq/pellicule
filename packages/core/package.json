@@ -4,6 +4,9 @@
   "description": "Deterministic video rendering with Vue",
   "type": "module",
   "main": "./src/index.js",
+  "bin": {
+    "pellicule": "./bin/cli.js"
+  },
   "exports": {
     ".": "./src/index.js",
     "./render": "./src/render.js"

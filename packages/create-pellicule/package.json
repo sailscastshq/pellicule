@@ -1,24 +1,22 @@
 {
-  "name": "@pellicule/cli",
+  "name": "create-pellicule",
   "version": "0.0.1",
-  "description": "CLI for Pellicule - render Vue components to video",
+  "description": "Scaffold a new Pellicule video project",
   "type": "module",
   "bin": {
-    "pellicule": "./src/index.js"
+    "create-pellicule": "./src/index.js"
   },
   "keywords": [
     "vue",
     "video",
     "rendering",
-    "cli",
-    "pellicule"
+    "pellicule",
+    "create",
+    "scaffold"
   ],
   "author": "Kelvin Omereshone <kelvin@sailscasts.com>",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
-  },
-  "dependencies": {
-    "pellicule": "*"
   }
 }

@@ -2,6 +2,7 @@ node_modules
 .pellicule
 frames
 *.mp4
+!.github/pellicule.mp4
 RESEARCH.md
 .DS_Store
 .claude

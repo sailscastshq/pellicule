@@ -1,9 +1,12 @@
 {
   "name": "pellicule",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Deterministic video rendering with Vue",
   "type": "module",
   "main": "./src/index.js",
+  "bin": {
+    "pellicule": "./bin/cli.js"
+  },
   "exports": {
     ".": "./src/index.js",
     "./render": "./src/render.js"

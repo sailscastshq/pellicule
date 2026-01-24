@@ -4,7 +4,7 @@ import { parseArgs } from 'node:util'
 import { resolve, extname, basename, dirname } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { renderToMp4 } from 'pellicule/render'
+import { renderToMp4 } from '../src/render.js'
 
 // Read version from package.json
 const __dirname = dirname(fileURLToPath(import.meta.url))

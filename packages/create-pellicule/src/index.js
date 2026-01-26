@@ -60,7 +60,7 @@ function copyTemplate(templateDir, targetDir, projectName) {
     let content = readFileSync(srcPath, 'utf-8')
 
     // Replace template variables
-    content = content.replace(/\{\{name\}\}/g, projectName)
+    content = content.replace(/my-pellicule-video/g, projectName)
 
     writeFileSync(destPath, content)
   }

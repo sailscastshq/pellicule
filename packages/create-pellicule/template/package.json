@@ -1,12 +1,12 @@
 {
-  "name": "{{name}}",
+  "name": "my-pellicule-video",
   "private": true,
   "type": "module",
   "scripts": {
     "render": "npx pellicule"
   },
   "dependencies": {
-    "pellicule": "^0.0.2",
+    "pellicule": "^0.0.3",
     "vue": "^3.4.0"
   }
 }

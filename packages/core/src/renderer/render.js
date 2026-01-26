@@ -14,9 +14,8 @@ import { join } from 'path'
  * @param {number} options.endFrame - Last frame to render, exclusive (default: durationInFrames)
  * @param {number} options.width - Video width in pixels (default: 1920)
  * @param {number} options.height - Video height in pixels (default: 1080)
- * @param {string} options.outputDir - Directory for frame images (default: './frames')
  * @param {function} options.onProgress - Progress callback
- * @returns {Promise<{ framesDir: string, totalFrames: number }>}
+ * @returns {Promise<{ framesDir: string, totalFrames: number, cleanup: function }>}
  */
 export async function renderVideo(options) {
   const {
@@ -27,7 +26,6 @@ export async function renderVideo(options) {
     endFrame,
     width = 1920,
     height = 1080,
-    outputDir = './frames',
     onProgress,
     silent = false
   } = options
@@ -43,11 +41,12 @@ export async function renderVideo(options) {
   // Start Vite server with the video component
   log(`Starting Vite server for ${input}...`)
   const viteStart = Date.now()
-  const { url, cleanup } = await createVideoServer({ input, width, height })
+  const { url, cleanup, tempDir } = await createVideoServer({ input, width, height })
   log(`Server ready in ${Date.now() - viteStart}ms`)
 
-  // Ensure output directory exists
-  await mkdir(outputDir, { recursive: true })
+  // Store frames inside .pellicule (cleaned up automatically after encoding)
+  const framesDir = join(tempDir, 'frames')
+  await mkdir(framesDir, { recursive: true })
 
   // Launch browser
   const browser = await chromium.launch()
@@ -98,7 +97,7 @@ export async function renderVideo(options) {
 
       // Screenshot - output frames are numbered from 0
       const outputFrameNum = frame - startFrame
-      const framePath = join(outputDir, `frame-${String(outputFrameNum).padStart(5, '0')}.png`)
+      const framePath = join(framesDir, `frame-${String(outputFrameNum).padStart(5, '0')}.png`)
       await page.screenshot({ path: framePath })
 
       // Progress callback
@@ -124,11 +123,11 @@ export async function renderVideo(options) {
 
   } finally {
     await browser.close()
-    await cleanup()
+    // Don't cleanup here - frames are needed for encoding
+    // Cleanup will be called by renderToMp4 after encoding
   }
 
   log(`Total time: ${Date.now() - startTime}ms`)
-  log(`Frames saved to ${outputDir}`)
 
-  return { framesDir: outputDir, totalFrames: framesToRender }
+  return { framesDir, totalFrames: framesToRender, cleanup }
 }

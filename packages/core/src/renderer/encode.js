@@ -80,16 +80,21 @@ export async function renderToMp4(options) {
 
   const { output = './output.mp4', silent = false, ...renderOptions } = options
 
-  // Step 1: Render frames
-  const { framesDir } = await renderVideo({ ...renderOptions, silent })
+  // Step 1: Render frames (stored in .pellicule/frames)
+  const { framesDir, cleanup } = await renderVideo({ ...renderOptions, silent })
 
-  // Step 2: Encode to MP4
-  const videoPath = await encodeVideo({
-    framesDir,
-    output,
-    fps: renderOptions.fps || 30,
-    silent
-  })
+  try {
+    // Step 2: Encode to MP4
+    const videoPath = await encodeVideo({
+      framesDir,
+      output,
+      fps: renderOptions.fps || 30,
+      silent
+    })
 
-  return videoPath
+    return videoPath
+  } finally {
+    // Step 3: Cleanup .pellicule folder (removes frames automatically)
+    await cleanup()
+  }
 }

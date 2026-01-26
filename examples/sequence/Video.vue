@@ -2,6 +2,10 @@
 /**
  * Sequence Example - Premium Motion Design Demo
  */
+defineVideoConfig({
+  durationInSeconds: 8
+})
+
 import { computed } from 'vue'
 import { Sequence, useSequence, useFrame, useVideoConfig, interpolate, Easing } from 'pellicule'
 

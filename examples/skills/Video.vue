@@ -1,4 +1,8 @@
 <script setup>
+defineVideoConfig({
+  durationInSeconds: 8
+})
+
 import { computed } from 'vue'
 import { useFrame, useVideoConfig, interpolate, Easing } from 'pellicule'
 

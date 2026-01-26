@@ -5,6 +5,10 @@
  * A cinematic showcase with particle systems, light rays,
  * and premium motion design. Sharp edges, no rounded corners.
  */
+defineVideoConfig({
+  durationInSeconds: 10
+})
+
 import { computed } from 'vue'
 import { Sequence, useSequence, useFrame, useVideoConfig, interpolate, Easing } from 'pellicule'
 

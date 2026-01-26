@@ -5,6 +5,10 @@
  * Playful colors, particle explosions, bouncing letters,
  * and wild visual effects.
  */
+defineVideoConfig({
+  durationInSeconds: 10
+})
+
 import { computed } from 'vue'
 import { useFrame, useVideoConfig, interpolate, Easing } from 'pellicule'
 

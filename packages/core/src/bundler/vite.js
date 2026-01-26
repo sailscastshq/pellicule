@@ -3,6 +3,7 @@ import vue from '@vitejs/plugin-vue'
 import { writeFile, mkdir, rm } from 'fs/promises'
 import { join, resolve, dirname, basename } from 'path'
 import { fileURLToPath } from 'url'
+import { pelliculeMacroPlugin } from '../macros/define-video-config.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const pelliculeSrc = resolve(__dirname, '..')
@@ -97,7 +98,7 @@ try {
   // Create Vite server rooted in the user's project directory
   const server = await createServer({
     root: tempDir,
-    plugins: [vue()],
+    plugins: [pelliculeMacroPlugin(), vue()],
     server: {
       port: 0,
       strictPort: false

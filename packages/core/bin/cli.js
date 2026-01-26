@@ -5,6 +5,7 @@ import { resolve, extname, basename, dirname } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { renderToMp4 } from '../src/render.js'
+import { extractVideoConfig, resolveVideoConfig } from '../src/macros/define-video-config.js'
 
 // Read version from package.json
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -50,35 +51,37 @@ ${c.bold('USAGE')}
 
 ${c.bold('OPTIONS')}
   ${c.info('-o, --output')} <file>     Output file path ${c.dim('(default: ./output.mp4)')}
-  ${c.info('-d, --duration')} <frames> Duration in frames ${c.dim('(default: 90)')}
-  ${c.info('-f, --fps')} <number>      Frames per second ${c.dim('(default: 30)')}
-  ${c.info('-w, --width')} <pixels>    Video width ${c.dim('(default: 1920)')}
-  ${c.info('-h, --height')} <pixels>   Video height ${c.dim('(default: 1080)')}
+  ${c.info('-d, --duration')} <frames> Duration in frames ${c.dim('(default: from component or 90)')}
+  ${c.info('-f, --fps')} <number>      Frames per second ${c.dim('(default: from component or 30)')}
+  ${c.info('-w, --width')} <pixels>    Video width ${c.dim('(default: from component or 1920)')}
+  ${c.info('-h, --height')} <pixels>   Video height ${c.dim('(default: from component or 1080)')}
   ${c.info('-r, --range')} <start:end> Frame range for partial render ${c.dim('(e.g., 100:200)')}
   ${c.info('--help')}                 Show this help message
   ${c.info('--version')}               Show version number
 
+${c.bold('COMPONENT CONFIG')}
+  Use ${c.highlight('defineVideoConfig')} in your component to set defaults:
+
+  ${c.dim('defineVideoConfig({ durationInSeconds: 5 })')}
+
+  No import needed - it's a compiler macro like Vue's defineProps.
+  Then just run: ${c.highlight('pellicule')} ${c.dim('(no flags needed!)')}
+
 ${c.bold('EXAMPLES')}
-  ${c.dim('# Zero-config (renders Video.vue → output.mp4)')}
+  ${c.dim('# Zero-config (uses defineVideoConfig from component)')}
   ${c.highlight('pellicule')}
 
   ${c.dim('# Specify input file (.vue extension is optional)')}
   ${c.highlight('pellicule')} MyVideo
 
-  ${c.dim('# Custom output and duration')}
-  ${c.highlight('pellicule')} Video.vue -o intro.mp4 -d 150
+  ${c.dim('# Override component config with CLI flags')}
+  ${c.highlight('pellicule')} Video.vue -d 150
 
   ${c.dim('# 4K video at 60fps')}
   ${c.highlight('pellicule')} Video.vue -w 3840 -h 2160 -f 60
 
-  ${c.dim('# 10 second video')}
-  ${c.highlight('pellicule')} Video.vue -d 300 -f 30
-
   ${c.dim('# Render only frames 100-200 (for faster iteration)')}
-  ${c.highlight('pellicule')} Video.vue -d 300 -r 100:200
-
-  ${c.dim('# Render from frame 150 to 250')}
-  ${c.highlight('pellicule')} Video.vue -d 300 --range 150:250
+  ${c.highlight('pellicule')} Video.vue -r 100:200
 
 ${c.bold('DURATION HELPER')}
   frames = seconds * fps
@@ -152,11 +155,23 @@ async function main() {
   if (!existsSync(inputPath)) fail(`File not found: ${input}`)
   if (extname(inputPath) !== '.vue') fail(`Input must be a .vue file, got: ${extname(inputPath) || '(no extension)'}`)
 
-  // Parse options with defaults
-  const fps = parseInt(values.fps || '30', 10)
-  const durationInFrames = parseInt(values.duration || '90', 10)
-  const width = parseInt(values.width || '1920', 10)
-  const height = parseInt(values.height || '1080', 10)
+  // Extract config from component (if defineVideoConfig is used)
+  const componentConfig = extractVideoConfig(inputPath)
+
+  // Build CLI flags object (only include explicitly provided values)
+  const cliFlags = {}
+  if (values.duration !== undefined) cliFlags.duration = parseInt(values.duration, 10)
+  if (values.fps !== undefined) cliFlags.fps = parseInt(values.fps, 10)
+  if (values.width !== undefined) cliFlags.width = parseInt(values.width, 10)
+  if (values.height !== undefined) cliFlags.height = parseInt(values.height, 10)
+
+  // Resolve final config: defaults < componentConfig < cliFlags
+  const resolvedConfig = resolveVideoConfig({ componentConfig, cliFlags })
+
+  const fps = resolvedConfig.fps
+  const durationInFrames = resolvedConfig.durationInFrames
+  const width = resolvedConfig.width
+  const height = resolvedConfig.height
   const output = values.output || './output.mp4'
   const outputPath = resolve(output)
 
@@ -174,11 +189,11 @@ async function main() {
     if (isNaN(endFrame) || endFrame <= 0) fail(`Invalid end frame in range: ${endStr}`)
   }
 
-  // Validate options
-  if (isNaN(fps) || fps <= 0) fail(`Invalid fps value: ${values.fps}`)
-  if (isNaN(durationInFrames) || durationInFrames <= 0) fail(`Invalid duration value: ${values.duration}`)
-  if (isNaN(width) || width <= 0) fail(`Invalid width value: ${values.width}`)
-  if (isNaN(height) || height <= 0) fail(`Invalid height value: ${values.height}`)
+  // Validate resolved config
+  if (isNaN(fps) || fps <= 0) fail(`Invalid fps value: ${fps}`)
+  if (isNaN(durationInFrames) || durationInFrames <= 0) fail(`Invalid duration value: ${durationInFrames}`)
+  if (isNaN(width) || width <= 0) fail(`Invalid width value: ${width}`)
+  if (isNaN(height) || height <= 0) fail(`Invalid height value: ${height}`)
   if (startFrame >= endFrame) fail(`Start frame (${startFrame}) must be less than end frame (${endFrame})`)
   if (endFrame > durationInFrames) fail(`End frame (${endFrame}) exceeds duration (${durationInFrames})`)
 
@@ -191,6 +206,9 @@ async function main() {
   const partialSeconds = (framesToRender / fps).toFixed(1)
 
   console.log(`  ${c.bold('Input')}      ${c.info(basename(inputPath))}`)
+  if (componentConfig) {
+    console.log(`  ${c.bold('Config')}     ${c.highlight('defineVideoConfig')} ${c.dim('detected ✓')}`)
+  }
   console.log(`  ${c.bold('Output')}     ${c.info(basename(outputPath))}`)
   console.log(`  ${c.bold('Resolution')} ${width}x${height}`)
   console.log(`  ${c.bold('Duration')}   ${durationInFrames} frames @ ${fps}fps ${c.dim(`(${durationSeconds}s)`)}`)

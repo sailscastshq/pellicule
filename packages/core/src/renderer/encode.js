@@ -8,6 +8,7 @@ import path from 'path'
  * @param {string} options.framesDir - Directory containing frame-XXXXX.png files
  * @param {string} options.output - Output video path (default: './output.mp4')
  * @param {number} options.fps - Frames per second (default: 30)
+ * @param {string|null} options.audio - Audio file path to include (default: null)
  * @param {boolean} options.silent - Suppress console output (default: false)
  * @returns {Promise<string>} Path to the output video
  */
@@ -16,6 +17,7 @@ export function encodeVideo(options) {
     framesDir,
     output = './output.mp4',
     fps = 30,
+    audio = null,
     silent = false
   } = options
 
@@ -26,9 +28,11 @@ export function encodeVideo(options) {
       '-y', // Overwrite output
       '-framerate', String(fps),
       '-i', framePattern,
+      ...(audio ? ['-i', audio] : []),
       '-c:v', 'libx264',
       '-pix_fmt', 'yuv420p', // Compatibility
       '-preset', 'fast',
+      ...(audio ? ['-c:a', 'aac'] : []),
       output
     ]
 
@@ -72,13 +76,14 @@ export function encodeVideo(options) {
  * Full render pipeline: Vue component → frames → MP4
  *
  * @param {object} options - Same as renderVideo, plus output path
+ * @param {string|null} options.audio - Audio file path to include (default: null)
  * @param {boolean} options.silent - Suppress console output (default: false)
  * @returns {Promise<string>} Path to the output video
  */
 export async function renderToMp4(options) {
   const { renderVideo } = await import('./render.js')
 
-  const { output = './output.mp4', silent = false, ...renderOptions } = options
+  const { output = './output.mp4', audio = null, silent = false, ...renderOptions } = options
 
   // Step 1: Render frames (stored in .pellicule/frames)
   const { framesDir, cleanup } = await renderVideo({ ...renderOptions, silent })
@@ -89,6 +94,7 @@ export async function renderToMp4(options) {
       framesDir,
       output,
       fps: renderOptions.fps || 30,
+      audio,
       silent
     })
 

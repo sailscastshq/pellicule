@@ -56,6 +56,7 @@ ${c.bold('OPTIONS')}
   ${c.info('-w, --width')} <pixels>    Video width ${c.dim('(default: from component or 1920)')}
   ${c.info('-h, --height')} <pixels>   Video height ${c.dim('(default: from component or 1080)')}
   ${c.info('-r, --range')} <start:end> Frame range for partial render ${c.dim('(e.g., 100:200)')}
+  ${c.info('-a, --audio')} <file>     Audio file to include ${c.dim('(mp3, wav, aac, etc.)')}
   ${c.info('--help')}                 Show this help message
   ${c.info('--version')}               Show version number
 
@@ -123,6 +124,7 @@ async function main() {
       width: { type: 'string', short: 'w' },
       height: { type: 'string', short: 'h' },
       range: { type: 'string', short: 'r' },
+      audio: { type: 'string', short: 'a' },
       help: { type: 'boolean' },
       version: { type: 'boolean' }
     }
@@ -157,6 +159,17 @@ async function main() {
 
   // Extract config from component (if defineVideoConfig is used)
   const componentConfig = extractVideoConfig(inputPath)
+
+  // Resolve audio file path (CLI flag takes precedence over component config)
+  let audioPath = null
+  if (values.audio) {
+    audioPath = resolve(values.audio)
+    if (!existsSync(audioPath)) fail(`Audio file not found: ${values.audio}`)
+  } else if (componentConfig?.audio) {
+    // Resolve component audio path relative to the component file
+    audioPath = resolve(dirname(inputPath), componentConfig.audio)
+    if (!existsSync(audioPath)) fail(`Audio file not found: ${componentConfig.audio}`)
+  }
 
   // Build CLI flags object (only include explicitly provided values)
   const cliFlags = {}
@@ -215,6 +228,9 @@ async function main() {
   if (isPartialRender) {
     console.log(`  ${c.bold('Range')}      ${c.highlight(`frames ${startFrame}-${endFrame - 1}`)} ${c.dim(`(${framesToRender} frames, ${partialSeconds}s)`)}`)
   }
+  if (audioPath) {
+    console.log(`  ${c.bold('Audio')}      ${c.info(basename(audioPath))}`)
+  }
   console.log()
 
   const startTime = Date.now()
@@ -234,6 +250,7 @@ async function main() {
       width,
       height,
       output: outputPath,
+      audio: audioPath,
       silent: true,
       onProgress: ({ frame, total, fps: currentFps }) => {
         // Clear line and print progress (stays on same line)

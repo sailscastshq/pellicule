@@ -1,116 +1,113 @@
-import { createServer } from 'vite'
+import { createServer, loadConfigFromFile, mergeConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import { writeFile, mkdir, rm } from 'fs/promises'
-import { join, resolve, dirname, basename } from 'path'
+import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { pelliculeMacroPlugin } from '../macros/define-video-config.js'
+import { createRequire } from 'module'
+import { pelliculeMacroVitePlugin } from '../macros/define-video-config.js'
+import { writeTempEntry } from './entry.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const pelliculeSrc = resolve(__dirname, '..')
 
 /**
- * Creates a Vite dev server in the user's project directory.
- * This way Vite naturally finds their node_modules with Vue installed.
+ * Creates a Vite dev server for rendering a video component.
+ *
+ * When a configFile is provided, Pellicule loads the user's existing
+ * vite.config.js and deep-merges it with its own required config.
+ * This means aliases, plugins, and settings from the user's project
+ * are automatically available inside video components.
  *
  * @param {object} options
- * @param {string} options.input - Path to the .vue file
+ * @param {string} options.input - Absolute path to the .vue file
  * @param {number} options.width - Video width
  * @param {number} options.height - Video height
- * @returns {Promise<{ server: object, url: string, cleanup: function }>}
+ * @param {string|null} [options.configFile] - Path to the user's vite.config.js (auto-detected or explicit)
+ * @returns {Promise<{ server: object, url: string, cleanup: function, tempDir: string }>}
  */
 export async function createVideoServer(options) {
-  const { input, width = 1920, height = 1080 } = options
+  const { input, width = 1920, height = 1080, configFile = null } = options
 
   const inputPath = resolve(input)
-  const inputDir = dirname(inputPath)
-  const inputFile = basename(inputPath)
 
-  // Create .pellicule temp folder in user's project
-  const tempDir = join(inputDir, '.pellicule')
-  await mkdir(tempDir, { recursive: true })
+  // Write the shared entry scaffold (.pellicule/index.html + entry.js)
+  const { tempDir, cleanup: cleanupTemp } = await writeTempEntry({
+    inputPath,
+    width,
+    height
+  })
 
-  // Create entry HTML
-  const htmlContent = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: ${width}px; height: ${height}px; overflow: hidden; }
-    #app { width: 100%; height: 100%; }
-  </style>
-</head>
-<body>
-  <div id="app"></div>
-  <script type="module" src="./entry.js"></script>
-</body>
-</html>`
+  // Resolve Vue from the user's project to avoid duplicate Vue runtimes.
+  // Without this, pellicule's source files (physically in the pellicule repo)
+  // would resolve 'vue' from their own node_modules — different instance
+  // than the project's Vue, which breaks provide/inject silently.
+  const projectRequire = createRequire(resolve(process.cwd(), 'package.json'))
+  let vueAlias
+  try {
+    vueAlias = projectRequire.resolve('vue')
+  } catch {
+    // If vue can't be resolved from project, let Vite handle it naturally
+  }
 
-  // Create entry JS with setFrame function for fast frame updates
-  const entryContent = `
-import { createApp, ref, provide, h, nextTick } from 'vue'
-import VideoComponent from '../${inputFile}'
+  const aliases = {
+    'pellicule': pelliculeSrc
+  }
+  if (vueAlias) aliases['vue'] = vueAlias
 
-// Pellicule injection keys (must match composables.js)
-const FRAME_KEY = Symbol.for('pellicule-frame')
-const CONFIG_KEY = Symbol.for('pellicule-config')
+  // When the user has a vite.config.js, they already have vue() in their
+  // plugins. Adding ours too causes a duplicate plugin conflict — the second
+  // vue() sees already-transformed output and fails. So we only add vue()
+  // when there's no user config (standalone pellicule rendering).
+  let finalConfig
 
-// Get initial config from URL
-const params = new URLSearchParams(window.location.search)
-const fps = parseInt(params.get('fps') || '30', 10)
-const durationInFrames = parseInt(params.get('duration') || '90', 10)
-const width = parseInt(params.get('width') || '${width}', 10)
-const height = parseInt(params.get('height') || '${height}', 10)
-
-const config = { fps, durationInFrames, width, height }
-
-// Frame ref - reactive, will trigger re-render when changed
-const frameRef = ref(0)
-
-// Expose setFrame function for the renderer to call
-window.__PELLICULE_SET_FRAME__ = async (frame) => {
-  frameRef.value = frame
-  await nextTick() // Wait for Vue to re-render
-}
-
-try {
-  // Create app with frame context
-  const app = createApp({
-    setup() {
-      provide(FRAME_KEY, frameRef)
-      provide(CONFIG_KEY, config)
-      return () => h(VideoComponent)
+  if (configFile) {
+    let loaded = null
+    try {
+      loaded = await loadConfigFromFile(
+        { command: 'serve', mode: 'development' },
+        configFile
+      )
+    } catch {
+      // Config file exists but can't be loaded (e.g. Quasar's #q-app/wrappers).
+      // Fall through to the fallback path below.
     }
-  })
 
-  app.mount('#app')
-  window.__PELLICULE_READY__ = true
-} catch (error) {
-  console.error('Pellicule render error:', error)
-  window.__PELLICULE_READY__ = true
-  window.__PELLICULE_ERROR__ = error.message
-}
-`
+    const pelliculeConfig = {
+      root: tempDir,
+      plugins: [pelliculeMacroVitePlugin()],
+      server: { port: 0, strictPort: false },
+      resolve: { alias: aliases },
+      logLevel: 'warn'
+    }
 
-  await writeFile(join(tempDir, 'index.html'), htmlContent)
-  await writeFile(join(tempDir, 'entry.js'), entryContent)
-
-  // Create Vite server rooted in the user's project directory
-  const server = await createServer({
-    root: tempDir,
-    plugins: [pelliculeMacroPlugin(), vue()],
-    server: {
-      port: 0,
-      strictPort: false
-    },
-    resolve: {
-      alias: {
-        'pellicule': pelliculeSrc
+    if (loaded?.config) {
+      // Strip plugins that assume the original project root and break when
+      // Pellicule changes root to its temp directory. Currently this affects
+      // laravel-vite-plugin which configures base/publicDir/HMR relative to
+      // the Laravel project root.
+      if (loaded.config.plugins) {
+        const conflicting = new Set(['laravel', 'vite-plugin-full-reload'])
+        loaded.config.plugins = loaded.config.plugins
+          .flat(Infinity)
+          .filter(p => !(p && typeof p === 'object' && conflicting.has(p.name)))
       }
-    },
-    logLevel: 'warn'
-  })
+      finalConfig = mergeConfig(loaded.config, pelliculeConfig)
+    } else {
+      // Config file existed but failed to load — add vue() as fallback
+      pelliculeConfig.plugins.push(vue())
+      finalConfig = pelliculeConfig
+    }
+  } else {
+    // No user config — pellicule provides everything including vue()
+    finalConfig = {
+      root: tempDir,
+      plugins: [pelliculeMacroVitePlugin(), vue()],
+      server: { port: 0, strictPort: false },
+      resolve: { alias: aliases },
+      logLevel: 'warn'
+    }
+  }
 
+  const server = await createServer(finalConfig)
   await server.listen()
 
   const address = server.httpServer.address()
@@ -118,7 +115,7 @@ try {
 
   const cleanup = async () => {
     await server.close()
-    await rm(tempDir, { recursive: true, force: true })
+    await cleanupTemp()
   }
 
   return { server, url, cleanup, tempDir }

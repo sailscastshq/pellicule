@@ -10,7 +10,7 @@
  *   6. Nothing found                      → Built-in Vite adapter (zero config)
  */
 
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { join, resolve } from 'path'
 
 /**
@@ -22,6 +22,7 @@ import { join, resolve } from 'path'
  * @property {string|null} configFile - Absolute path to the detected config file
  * @property {string} videosDir - Absolute path to the conventional videos directory
  * @property {boolean} byos - Whether this project requires BYOS (Bring Your Own Server)
+ * @property {string|null} defaultServerUrl - Default server URL for BYOS projects (e.g., Nuxt)
  */
 
 /**
@@ -84,7 +85,8 @@ export function detectProject(cwd) {
         bundler: 'vite',
         configFile: file,
         videosDir: join(root, 'app', 'videos'),
-        byos: true
+        byos: true,
+        defaultServerUrl: 'http://localhost:3000'
       }
     }
   }
@@ -110,6 +112,44 @@ export function detectProject(cwd) {
     configFile: null,
     videosDir: root,
     byos: false
+  }
+}
+
+/**
+ * Read project-level Pellicule config from the `pellicule` key in package.json.
+ *
+ * This lets users set options once per project instead of passing CLI flags
+ * every time. Useful for Nuxt projects (serverUrl), custom video directories,
+ * or forcing a specific bundler.
+ *
+ * Supported keys:
+ *   - serverUrl  — URL of a running dev server (BYOS mode)
+ *   - videosDir  — custom directory for video components
+ *   - bundler    — force 'vite' or 'rsbuild'
+ *
+ * @param {string} [cwd] - Directory to scan (defaults to process.cwd())
+ * @returns {{ serverUrl?: string, videosDir?: string, bundler?: string }}
+ */
+export function readPelliculeConfig(cwd) {
+  const root = resolve(cwd || process.cwd())
+  const pkgPath = join(root, 'package.json')
+
+  if (!existsSync(pkgPath)) return {}
+
+  try {
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
+    const config = pkg.pellicule
+
+    if (!config || typeof config !== 'object') return {}
+
+    const result = {}
+    if (typeof config.serverUrl === 'string') result.serverUrl = config.serverUrl
+    if (typeof config.videosDir === 'string') result.videosDir = resolve(root, config.videosDir)
+    if (typeof config.bundler === 'string') result.bundler = config.bundler
+
+    return result
+  } catch {
+    return {}
   }
 }
 

@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { renderToMp4 } from '../src/render.js'
 import { extractVideoConfig, resolveVideoConfig } from '../src/macros/define-video-config.js'
-import { detectProject, resolveInputFile } from '../src/config/detect.js'
+import { detectProject, readPelliculeConfig, resolveInputFile } from '../src/config/detect.js'
 
 // Read version from package.json
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -75,12 +75,20 @@ ${c.bold('COMPONENT CONFIG')}
   No import needed - it's a compiler macro like Vue's defineProps.
   Then just run: ${c.highlight('pellicule')} ${c.dim('(no flags needed!)')}
 
+${c.bold('PROJECT CONFIG')}
+  Set options once in package.json instead of passing CLI flags:
+
+  ${c.dim('{ "pellicule": { "serverUrl": "http://localhost:3000" } }')}
+
+  Supported keys: ${c.info('serverUrl')}, ${c.info('videosDir')}, ${c.info('bundler')}
+  Resolution: CLI flags > package.json > auto-detected > defaults
+
 ${c.bold('AUTO-DETECTION')}
   Pellicule reads your existing config files automatically:
   ${c.dim('vite.config.js')}       → Vite adapter
   ${c.dim('rsbuild.config.js')}    → Rsbuild adapter
   ${c.dim('config/shipwright.js')} → Rsbuild adapter (boring stack)
-  ${c.dim('nuxt.config.ts')}       → Needs --server-url (BYOS mode)
+  ${c.dim('nuxt.config.ts')}       → BYOS mode (defaults to localhost:3000)
   ${c.dim('No config')}            → Built-in Vite (zero config)
 
 ${c.bold('EXAMPLES')}
@@ -99,8 +107,8 @@ ${c.bold('EXAMPLES')}
   ${c.dim('# Render only frames 100-200 (for faster iteration)')}
   ${c.highlight('pellicule')} Video.vue -r 100:200
 
-  ${c.dim('# Use with Nuxt (BYOS mode)')}
-  ${c.highlight('pellicule')} InvoiceDemo --server-url http://localhost:3000
+  ${c.dim('# Use with Nuxt (auto-detects, connects to localhost:3000)')}
+  ${c.highlight('pellicule')} InvoiceDemo
 
   ${c.dim('# Force Rsbuild bundler')}
   ${c.highlight('pellicule')} Video.vue --bundler rsbuild
@@ -168,25 +176,18 @@ async function main() {
 
   // ── Auto-detection ────────────────────────────────────────────────
   const detected = detectProject()
+  const pkgConfig = readPelliculeConfig()
 
-  // CLI flags override auto-detected values
-  const bundler = values.bundler || detected.bundler
+  // Resolution: CLI flags > package.json "pellicule" key > auto-detected
+  const bundler = values.bundler || pkgConfig.bundler || detected.bundler
   const configFile = values.config ? resolve(values.config) : detected.configFile
-  const videosDir = values['videos-dir'] ? resolve(values['videos-dir']) : detected.videosDir
-  const serverUrl = values['server-url'] || null
+  const videosDir = values['videos-dir'] ? resolve(values['videos-dir']) : pkgConfig.videosDir || detected.videosDir
+  const serverUrl = values['server-url'] || pkgConfig.serverUrl || detected.defaultServerUrl || null
   const projectType = detected.projectType
 
   // Validate bundler flag
   if (values.bundler && !['vite', 'rsbuild'].includes(values.bundler)) {
     fail(`Unknown bundler: ${values.bundler}`, 'Supported bundlers: vite, rsbuild')
-  }
-
-  // Warn if Nuxt was detected but no --server-url provided
-  if (detected.byos && !serverUrl) {
-    fail(
-      'Nuxt project detected. Pellicule needs your running Nuxt dev server.',
-      'Start your Nuxt server and pass: --server-url http://localhost:3000'
-    )
   }
 
   // ── Input file resolution ─────────────────────────────────────────

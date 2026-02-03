@@ -12,7 +12,6 @@
  *   })
  */
 
-import { parse } from '@vue/compiler-sfc'
 import { readFileSync } from 'fs'
 
 // ============================================================================
@@ -31,12 +30,13 @@ export function extractVideoConfig(filePath) {
  * Extract video config from Vue SFC source code.
  */
 export function extractVideoConfigFromSource(source) {
-  const { descriptor } = parse(source)
-  const scriptSetup = descriptor.scriptSetup
+  // Extract <script setup> content with a regex instead of pulling in
+  // the full @vue/compiler-sfc parser. The block can't nest, so this
+  // is reliable and avoids a heavy dependency.
+  const scriptSetupMatch = source.match(/<script\s+setup[^>]*>([\s\S]*?)<\/script>/)
+  if (!scriptSetupMatch) return null
 
-  if (!scriptSetup) return null
-
-  const match = scriptSetup.content.match(/defineVideoConfig\s*\(\s*(\{[\s\S]*?\})\s*\)/)
+  const match = scriptSetupMatch[1].match(/defineVideoConfig\s*\(\s*(\{[\s\S]*?\})\s*\)/)
   if (!match) return null
 
   try {

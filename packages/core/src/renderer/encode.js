@@ -78,6 +78,10 @@ export function encodeVideo(options) {
  * @param {object} options - Same as renderVideo, plus output path
  * @param {string|null} options.audio - Audio file path to include (default: null)
  * @param {boolean} options.silent - Suppress console output (default: false)
+ * @param {string|null} [options.serverUrl] - BYOS: skip bundler, use this URL
+ * @param {'vite'|'rsbuild'} [options.bundler] - Which bundler adapter to use
+ * @param {string|null} [options.configFile] - Path to the user's config file
+ * @param {string} [options.projectType] - Detected project type
  * @returns {Promise<string>} Path to the output video
  */
 export async function renderToMp4(options) {

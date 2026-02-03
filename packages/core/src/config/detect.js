@@ -2,19 +2,20 @@
  * Auto-detect the project type, config file, and videos directory.
  *
  * Detection chain (first match wins):
- *   1. vite.config.js / vite.config.ts    → Vite adapter
- *   2. rsbuild.config.js / rsbuild.config.ts → Rsbuild adapter
- *   3. config/shipwright.js               → Rsbuild adapter (reads `build` key)
- *   4. nuxt.config.ts / nuxt.config.js    → BYOS mode (needs running Nuxt server)
- *   5. quasar.config.js                   → Vite adapter (Quasar Vite mode)
- *   6. Nothing found                      → Built-in Vite adapter (zero config)
+ *   1. artisan + vite.config.js           → Laravel (Vite adapter, resources/js/Videos)
+ *   2. vite.config.js / vite.config.ts    → Vite adapter
+ *   3. rsbuild.config.js / rsbuild.config.ts → Rsbuild adapter
+ *   4. config/shipwright.js               → Rsbuild adapter (reads `build` key)
+ *   5. nuxt.config.ts / nuxt.config.js    → BYOS mode (needs running Nuxt server)
+ *   6. quasar.config.js                   → BYOS mode (needs running Quasar server)
+ *   7. Nothing found                      → Built-in Vite adapter (zero config)
  */
 
 import { existsSync, readFileSync } from 'fs'
 import { join, resolve } from 'path'
 
 /**
- * @typedef {'vite'|'rsbuild'|'shipwright'|'nuxt'|'quasar'|'standalone'} ProjectType
+ * @typedef {'laravel'|'vite'|'rsbuild'|'shipwright'|'nuxt'|'quasar'|'standalone'} ProjectType
  *
  * @typedef {Object} DetectedProject
  * @property {ProjectType} projectType
@@ -34,7 +35,26 @@ import { join, resolve } from 'path'
 export function detectProject(cwd) {
   const root = resolve(cwd || process.cwd())
 
-  // 1. Vite
+  // 1. Laravel (artisan + vite.config.js)
+  //    Laravel projects use Vite with laravel-vite-plugin. The artisan file
+  //    is present in every Laravel project root. Videos go in resources/js/videos/
+  //    following Laravel's lowercase directory convention.
+  if (existsSync(join(root, 'artisan'))) {
+    for (const name of ['vite.config.js', 'vite.config.ts']) {
+      const file = join(root, name)
+      if (existsSync(file)) {
+        return {
+          projectType: 'laravel',
+          bundler: 'vite',
+          configFile: file,
+          videosDir: join(root, 'resources', 'js', 'videos'),
+          byos: false
+        }
+      }
+    }
+  }
+
+  // 2. Vite
   for (const name of ['vite.config.js', 'vite.config.ts']) {
     const file = join(root, name)
     if (existsSync(file)) {
@@ -48,7 +68,7 @@ export function detectProject(cwd) {
     }
   }
 
-  // 2. Rsbuild (standalone)
+  // 3. Rsbuild (standalone)
   for (const name of ['rsbuild.config.js', 'rsbuild.config.ts']) {
     const file = join(root, name)
     if (existsSync(file)) {
@@ -62,7 +82,7 @@ export function detectProject(cwd) {
     }
   }
 
-  // 3. Shipwright (boring stack)
+  // 4. Shipwright (boring stack)
   {
     const file = join(root, 'config', 'shipwright.js')
     if (existsSync(file)) {
@@ -76,7 +96,7 @@ export function detectProject(cwd) {
     }
   }
 
-  // 4. Nuxt
+  // 5. Nuxt
   for (const name of ['nuxt.config.ts', 'nuxt.config.js']) {
     const file = join(root, name)
     if (existsSync(file)) {
@@ -91,21 +111,27 @@ export function detectProject(cwd) {
     }
   }
 
-  // 5. Quasar
+  // 6. Quasar
+  //    quasar.config.js is NOT a Vite config — it uses #q-app/wrappers
+  //    and other Quasar-specific imports. Pellicule can't load it directly.
+  //    Instead, the user adds ['pellicule/quasar'] to their vitePlugins,
+  //    which serves a /pellicule render page inside the Quasar dev server.
+  //    BYOS mode: the user runs `quasar dev`, Pellicule connects to it.
   {
     const file = join(root, 'quasar.config.js')
     if (existsSync(file)) {
       return {
         projectType: 'quasar',
         bundler: 'vite',
-        configFile: file,
+        configFile: null,
         videosDir: join(root, 'src', 'videos'),
-        byos: false
+        byos: true,
+        defaultServerUrl: 'http://localhost:9000'
       }
     }
   }
 
-  // 6. No config found → standalone (create-pellicule / bare project)
+  // 7. No config found → standalone (create-pellicule / bare project)
   return {
     projectType: 'standalone',
     bundler: 'vite',

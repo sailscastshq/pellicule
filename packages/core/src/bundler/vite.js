@@ -2,6 +2,7 @@ import { createServer, loadConfigFromFile, mergeConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { createRequire } from 'module'
 import { pelliculeMacroVitePlugin } from '../macros/define-video-config.js'
 import { writeTempEntry } from './entry.js'
 
@@ -35,36 +36,74 @@ export async function createVideoServer(options) {
     height
   })
 
-  // Pellicule's required config — these must always be present
-  const pelliculeConfig = {
-    root: tempDir,
-    plugins: [pelliculeMacroVitePlugin(), vue()],
-    server: {
-      port: 0,
-      strictPort: false
-    },
-    resolve: {
-      alias: {
-        'pellicule': pelliculeSrc
-      }
-    },
-    logLevel: 'warn'
+  // Resolve Vue from the user's project to avoid duplicate Vue runtimes.
+  // Without this, pellicule's source files (physically in the pellicule repo)
+  // would resolve 'vue' from their own node_modules — different instance
+  // than the project's Vue, which breaks provide/inject silently.
+  const projectRequire = createRequire(resolve(process.cwd(), 'package.json'))
+  let vueAlias
+  try {
+    vueAlias = projectRequire.resolve('vue')
+  } catch {
+    // If vue can't be resolved from project, let Vite handle it naturally
   }
 
-  let finalConfig = pelliculeConfig
+  const aliases = {
+    'pellicule': pelliculeSrc
+  }
+  if (vueAlias) aliases['vue'] = vueAlias
 
-  // If the user has a vite.config.js, load and merge it
+  // When the user has a vite.config.js, they already have vue() in their
+  // plugins. Adding ours too causes a duplicate plugin conflict — the second
+  // vue() sees already-transformed output and fails. So we only add vue()
+  // when there's no user config (standalone pellicule rendering).
+  let finalConfig
+
   if (configFile) {
-    const loaded = await loadConfigFromFile(
-      { command: 'serve', mode: 'development' },
-      configFile
-    )
+    let loaded = null
+    try {
+      loaded = await loadConfigFromFile(
+        { command: 'serve', mode: 'development' },
+        configFile
+      )
+    } catch {
+      // Config file exists but can't be loaded (e.g. Quasar's #q-app/wrappers).
+      // Fall through to the fallback path below.
+    }
+
+    const pelliculeConfig = {
+      root: tempDir,
+      plugins: [pelliculeMacroVitePlugin()],
+      server: { port: 0, strictPort: false },
+      resolve: { alias: aliases },
+      logLevel: 'warn'
+    }
 
     if (loaded?.config) {
-      // User config is the base, Pellicule config merges on top.
-      // This ensures Pellicule's required plugins and aliases always win,
-      // while the user's aliases, plugins, and settings are preserved.
+      // Strip plugins that assume the original project root and break when
+      // Pellicule changes root to its temp directory. Currently this affects
+      // laravel-vite-plugin which configures base/publicDir/HMR relative to
+      // the Laravel project root.
+      if (loaded.config.plugins) {
+        const conflicting = new Set(['laravel', 'vite-plugin-full-reload'])
+        loaded.config.plugins = loaded.config.plugins
+          .flat(Infinity)
+          .filter(p => !(p && typeof p === 'object' && conflicting.has(p.name)))
+      }
       finalConfig = mergeConfig(loaded.config, pelliculeConfig)
+    } else {
+      // Config file existed but failed to load — add vue() as fallback
+      pelliculeConfig.plugins.push(vue())
+      finalConfig = pelliculeConfig
+    }
+  } else {
+    // No user config — pellicule provides everything including vue()
+    finalConfig = {
+      root: tempDir,
+      plugins: [pelliculeMacroVitePlugin(), vue()],
+      server: { port: 0, strictPort: false },
+      resolve: { alias: aliases },
+      logLevel: 'warn'
     }
   }
 

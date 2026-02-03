@@ -137,7 +137,9 @@ export async function renderVideo(options) {
 
   try {
     // Load page ONCE with config (durationInFrames stays full for correct animation calculations)
-    const pageUrl = `${url}?fps=${fps}&duration=${durationInFrames}&width=${width}&height=${height}`
+    // Use & if the URL already has query params (e.g. Nuxt BYOS: /pellicule?component=Demo)
+    const separator = url.includes('?') ? '&' : '?'
+    const pageUrl = `${url}${separator}fps=${fps}&duration=${durationInFrames}&width=${width}&height=${height}`
     await page.goto(pageUrl, { waitUntil: 'networkidle' })
 
     // Wait for Vue to mount

@@ -103,10 +103,16 @@ export async function createVideoServer(options) {
   }
 
   // Build resolve.alias — always alias 'pellicule' to the local source.
+  // Also alias 'vue' to the project's Vue to avoid duplicate Vue runtimes.
+  // Without this, pellicule's source files (physically located in the pellicule
+  // repo) would resolve 'vue' from their own node_modules, while the project's
+  // entry code resolves 'vue' from the project's node_modules — two different
+  // Vue instances means provide/inject breaks silently.
   // For Shipwright projects, also add the conventional ~ and @ aliases
   // that sails-hook-shipwright normally injects at runtime.
   const aliases = {
-    'pellicule': pelliculeSrc
+    'pellicule': pelliculeSrc,
+    'vue': projectRequire.resolve('vue')
   }
 
   if (projectType === 'shipwright') {
@@ -116,6 +122,10 @@ export async function createVideoServer(options) {
   }
 
   // Pellicule's required Rsbuild config
+  // logLevel: 'error' suppresses Rsbuild's "start build started..." and
+  // "ready built in X s" messages. Pellicule has its own progress display.
+  // Note: rsbuild.logger is NOT exposed on the createRsbuild() return object,
+  // so logger.override() doesn't work. logLevel is the config-level equivalent.
   const pelliculeConfig = {
     source: {
       entry: {
@@ -130,12 +140,13 @@ export async function createVideoServer(options) {
     },
     plugins: [pelliculeMacroRsbuildPlugin(), pluginVue()],
     server: {
-      port: 0,
-      strictPort: false
+      strictPort: false,
+      printUrls: false
     },
     dev: {
       writeToDisk: false
-    }
+    },
+    logLevel: 'error'
   }
 
   let finalConfig = pelliculeConfig
@@ -151,6 +162,7 @@ export async function createVideoServer(options) {
   }
 
   const rsbuild = await createRsbuild({ rsbuildConfig: finalConfig })
+
   const devServer = await rsbuild.createDevServer()
   const { port } = await devServer.listen()
 

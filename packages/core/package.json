@@ -9,7 +9,9 @@
   },
   "exports": {
     ".": "./src/index.js",
-    "./render": "./src/render.js"
+    "./render": "./src/render.js",
+    "./nuxt": "./src/nuxt/module.js",
+    "./quasar": "./src/quasar/index.js"
   },
   "keywords": [
     "vue",
@@ -27,15 +29,16 @@
     "url": "https://github.com/sailscastshq/pellicule"
   },
   "dependencies": {
-    "@vue/compiler-sfc": "^3.0.0",
     "@vitejs/plugin-vue": "^5.0.0",
+    "@vue/compiler-sfc": "^3.0.0",
     "playwright": "^1.40.0",
     "vite": "^5.0.0"
   },
   "peerDependencies": {
-    "vue": "^3.0.0",
+    "@nuxt/kit": "^3.0.0",
     "@rsbuild/core": "^1.0.0",
-    "@rsbuild/plugin-vue": "^1.0.0"
+    "@rsbuild/plugin-vue": "^1.0.0",
+    "vue": "^3.0.0"
   },
   "peerDependenciesMeta": {
     "@rsbuild/core": {
@@ -43,6 +46,12 @@
     },
     "@rsbuild/plugin-vue": {
       "optional": true
+    },
+    "@nuxt/kit": {
+      "optional": true
     }
+  },
+  "devDependencies": {
+    "@nuxt/kit": "^4.3.0"
   }
 }

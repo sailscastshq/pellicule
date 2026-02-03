@@ -286,6 +286,7 @@ async function main() {
   // Show detected project info
   if (projectType !== 'standalone') {
     const projectLabels = {
+      laravel: 'Laravel',
       vite: 'Vite',
       rsbuild: 'Rsbuild',
       shipwright: 'Boring Stack (Shipwright)',
@@ -315,6 +316,15 @@ async function main() {
   const clearLine = '\x1b[2K'  // Clear entire line
   const cursorToStart = '\r'   // Move cursor to start of line
 
+  // For Nuxt and Quasar projects, construct the /pellicule render page URL.
+  // - Nuxt: pellicule/nuxt module injects the page
+  // - Quasar: pellicule/quasar Vite plugin serves the page
+  let finalServerUrl = serverUrl
+  if ((projectType === 'nuxt' || projectType === 'quasar') && serverUrl) {
+    const componentName = basename(inputPath, '.vue')
+    finalServerUrl = `${serverUrl.replace(/\/$/, '')}/pellicule?component=${encodeURIComponent(componentName)}`
+  }
+
   try {
     // Render with progress callback
     await renderToMp4({
@@ -328,7 +338,7 @@ async function main() {
       output: outputPath,
       audio: audioPath,
       silent: true,
-      serverUrl,
+      serverUrl: finalServerUrl,
       bundler,
       configFile,
       projectType,

@@ -171,12 +171,34 @@ export function pelliculeMacroVitePlugin() {
 
 /**
  * Rsbuild plugin that strips defineVideoConfig() calls.
- * Uses Rsbuild's api.transform() to process .vue files.
+ *
+ * Rsbuild's api.transform() runs AFTER built-in loaders, which means
+ * vue-loader has already compiled the <script setup> block by the time
+ * our transform runs. The raw .vue source is split into sub-modules
+ * and our regex may never see the actual defineVideoConfig() call.
+ *
+ * To handle this reliably, we use source.define to replace the
+ * defineVideoConfig identifier with a no-op function at compile time
+ * via Rspack's DefinePlugin. This runs during Rspack's compilation
+ * phase (after all loaders) and replaces free identifiers in the AST.
+ *
+ * The api.transform() is kept as a belt-and-suspenders measure —
+ * if it manages to strip the call from the raw source, even better.
  */
 export function pelliculeMacroRsbuildPlugin() {
   return {
     name: 'pellicule:define-video-config',
     setup(api) {
+      // Define defineVideoConfig as a compile-time no-op.
+      // This ensures the macro call doesn't crash at runtime
+      // regardless of loader ordering.
+      api.modifyRsbuildConfig((config) => {
+        config.source = config.source || {}
+        config.source.define = config.source.define || {}
+        config.source.define.defineVideoConfig = '(function(){})'
+      })
+
+      // Also attempt to strip the call from .vue source directly.
       api.transform({ test: /\.vue$/ }, ({ code }) => {
         const result = stripDefineVideoConfig(code)
         return result !== null ? result : code

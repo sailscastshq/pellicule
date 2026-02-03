@@ -1,7 +1,32 @@
 import { chromium } from 'playwright'
-import { createVideoServer } from '../bundler/vite.js'
-import { mkdir } from 'fs/promises'
-import { join } from 'path'
+import { mkdir, rm } from 'fs/promises'
+import { join, dirname } from 'path'
+
+/**
+ * Create a video server using the appropriate bundler adapter.
+ *
+ * @param {object} options
+ * @param {string} options.input - Absolute path to the .vue file
+ * @param {number} options.width
+ * @param {number} options.height
+ * @param {'vite'|'rsbuild'} options.bundler - Which bundler adapter to use
+ * @param {string|null} options.configFile - Path to the user's config file
+ * @param {string} options.projectType - Detected project type (for Shipwright config reading)
+ * @returns {Promise<{ url: string, cleanup: function, tempDir: string }>}
+ */
+async function startBundlerServer(options) {
+  const { bundler = 'vite', ...serverOptions } = options
+
+  if (bundler === 'rsbuild') {
+    // Lazy-load the Rsbuild adapter
+    const { createVideoServer } = await import('../bundler/rsbuild.js')
+    return createVideoServer(serverOptions)
+  }
+
+  // Default: Vite adapter (always available)
+  const { createVideoServer } = await import('../bundler/vite.js')
+  return createVideoServer(serverOptions)
+}
 
 /**
  * Renders a .vue component to video frames.
@@ -15,6 +40,10 @@ import { join } from 'path'
  * @param {number} options.width - Video width in pixels (default: 1920)
  * @param {number} options.height - Video height in pixels (default: 1080)
  * @param {function} options.onProgress - Progress callback
+ * @param {string|null} [options.serverUrl] - BYOS: skip bundler, use this URL instead
+ * @param {'vite'|'rsbuild'} [options.bundler] - Which bundler adapter to use (default: 'vite')
+ * @param {string|null} [options.configFile] - Path to the user's config file
+ * @param {string} [options.projectType] - Detected project type
  * @returns {Promise<{ framesDir: string, totalFrames: number, cleanup: function }>}
  */
 export async function renderVideo(options) {
@@ -27,7 +56,11 @@ export async function renderVideo(options) {
     width = 1920,
     height = 1080,
     onProgress,
-    silent = false
+    silent = false,
+    serverUrl = null,
+    bundler = 'vite',
+    configFile = null,
+    projectType = 'standalone'
   } = options
 
   // Calculate actual frame range to render
@@ -38,11 +71,39 @@ export async function renderVideo(options) {
 
   const startTime = Date.now()
 
-  // Start Vite server with the video component
-  log(`Starting Vite server for ${input}...`)
-  const viteStart = Date.now()
-  const { url, cleanup, tempDir } = await createVideoServer({ input, width, height })
-  log(`Server ready in ${Date.now() - viteStart}ms`)
+  let url
+  let cleanup
+  let tempDir
+
+  if (serverUrl) {
+    // BYOS mode: skip the bundler entirely, use the provided URL
+    log(`Using external server at ${serverUrl}...`)
+    url = serverUrl
+    // Create a temp dir for frames and provide cleanup
+    const byosTempDir = join(dirname(input), '.pellicule')
+    await mkdir(byosTempDir, { recursive: true })
+    tempDir = byosTempDir
+    cleanup = async () => {
+      await rm(byosTempDir, { recursive: true, force: true })
+    }
+  } else {
+    // Start a bundler dev server
+    const bundlerName = bundler === 'rsbuild' ? 'Rsbuild' : 'Vite'
+    log(`Starting ${bundlerName} server for ${input}...`)
+    const serverStart = Date.now()
+    const server = await startBundlerServer({
+      input,
+      width,
+      height,
+      bundler,
+      configFile,
+      projectType
+    })
+    url = server.url
+    cleanup = server.cleanup
+    tempDir = server.tempDir
+    log(`Server ready in ${Date.now() - serverStart}ms`)
+  }
 
   // Store frames inside .pellicule (cleaned up automatically after encoding)
   const framesDir = join(tempDir, 'frames')

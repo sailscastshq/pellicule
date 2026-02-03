@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { renderToMp4 } from '../src/render.js'
 import { extractVideoConfig, resolveVideoConfig } from '../src/macros/define-video-config.js'
+import { detectProject, resolveInputFile } from '../src/config/detect.js'
 
 // Read version from package.json
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -60,6 +61,12 @@ ${c.bold('OPTIONS')}
   ${c.info('--help')}                 Show this help message
   ${c.info('--version')}               Show version number
 
+${c.bold('INTEGRATION OPTIONS')}
+  ${c.info('--server-url')} <url>      Use a running dev server (BYOS mode)
+  ${c.info('--bundler')} <name>        Force a bundler: vite or rsbuild
+  ${c.info('--config')} <file>         Use a specific config file
+  ${c.info('--videos-dir')} <path>     Custom directory for video components
+
 ${c.bold('COMPONENT CONFIG')}
   Use ${c.highlight('defineVideoConfig')} in your component to set defaults:
 
@@ -67,6 +74,14 @@ ${c.bold('COMPONENT CONFIG')}
 
   No import needed - it's a compiler macro like Vue's defineProps.
   Then just run: ${c.highlight('pellicule')} ${c.dim('(no flags needed!)')}
+
+${c.bold('AUTO-DETECTION')}
+  Pellicule reads your existing config files automatically:
+  ${c.dim('vite.config.js')}       → Vite adapter
+  ${c.dim('rsbuild.config.js')}    → Rsbuild adapter
+  ${c.dim('config/shipwright.js')} → Rsbuild adapter (boring stack)
+  ${c.dim('nuxt.config.ts')}       → Needs --server-url (BYOS mode)
+  ${c.dim('No config')}            → Built-in Vite (zero config)
 
 ${c.bold('EXAMPLES')}
   ${c.dim('# Zero-config (uses defineVideoConfig from component)')}
@@ -83,6 +98,12 @@ ${c.bold('EXAMPLES')}
 
   ${c.dim('# Render only frames 100-200 (for faster iteration)')}
   ${c.highlight('pellicule')} Video.vue -r 100:200
+
+  ${c.dim('# Use with Nuxt (BYOS mode)')}
+  ${c.highlight('pellicule')} InvoiceDemo --server-url http://localhost:3000
+
+  ${c.dim('# Force Rsbuild bundler')}
+  ${c.highlight('pellicule')} Video.vue --bundler rsbuild
 
 ${c.bold('DURATION HELPER')}
   frames = seconds * fps
@@ -125,6 +146,10 @@ async function main() {
       height: { type: 'string', short: 'h' },
       range: { type: 'string', short: 'r' },
       audio: { type: 'string', short: 'a' },
+      'server-url': { type: 'string' },
+      bundler: { type: 'string' },
+      config: { type: 'string' },
+      'videos-dir': { type: 'string' },
       help: { type: 'boolean' },
       version: { type: 'boolean' }
     }
@@ -141,21 +166,43 @@ async function main() {
     process.exit(0)
   }
 
-  // Default to Video.vue if no input provided
-  const input = positionals[0] || 'Video.vue'
+  // ── Auto-detection ────────────────────────────────────────────────
+  const detected = detectProject()
 
-  // Try to resolve the input file, auto-appending .vue if needed
-  let inputPath = resolve(input)
+  // CLI flags override auto-detected values
+  const bundler = values.bundler || detected.bundler
+  const configFile = values.config ? resolve(values.config) : detected.configFile
+  const videosDir = values['videos-dir'] ? resolve(values['videos-dir']) : detected.videosDir
+  const serverUrl = values['server-url'] || null
+  const projectType = detected.projectType
 
-  if (!existsSync(inputPath) && !input.endsWith('.vue')) {
-    const withVue = resolve(input + '.vue')
-    if (existsSync(withVue)) {
-      inputPath = withVue
-    }
+  // Validate bundler flag
+  if (values.bundler && !['vite', 'rsbuild'].includes(values.bundler)) {
+    fail(`Unknown bundler: ${values.bundler}`, 'Supported bundlers: vite, rsbuild')
   }
 
-  if (!existsSync(inputPath)) fail(`File not found: ${input}`)
-  if (extname(inputPath) !== '.vue') fail(`Input must be a .vue file, got: ${extname(inputPath) || '(no extension)'}`)
+  // Warn if Nuxt was detected but no --server-url provided
+  if (detected.byos && !serverUrl) {
+    fail(
+      'Nuxt project detected. Pellicule needs your running Nuxt dev server.',
+      'Start your Nuxt server and pass: --server-url http://localhost:3000'
+    )
+  }
+
+  // ── Input file resolution ─────────────────────────────────────────
+  const input = positionals[0] || 'Video.vue'
+  const result = resolveInputFile(input, videosDir)
+
+  if (result.error) {
+    const searchedPaths = result.searched.map(p => `  - ${p}`).join('\n')
+    fail(result.error, `Looked in:\n${searchedPaths}`)
+  }
+
+  const inputPath = result.resolved
+
+  if (extname(inputPath) !== '.vue') {
+    fail(`Input must be a .vue file, got: ${extname(inputPath) || '(no extension)'}`)
+  }
 
   // Extract config from component (if defineVideoConfig is used)
   const componentConfig = extractVideoConfig(inputPath)
@@ -222,6 +269,22 @@ async function main() {
   if (componentConfig) {
     console.log(`  ${c.bold('Config')}     ${c.highlight('defineVideoConfig')} ${c.dim('detected ✓')}`)
   }
+
+  // Show detected project info
+  if (projectType !== 'standalone') {
+    const projectLabels = {
+      vite: 'Vite',
+      rsbuild: 'Rsbuild',
+      shipwright: 'Boring Stack (Shipwright)',
+      nuxt: 'Nuxt',
+      quasar: 'Quasar'
+    }
+    console.log(`  ${c.bold('Project')}    ${c.highlight(projectLabels[projectType] || projectType)} ${c.dim('detected ✓')}`)
+  }
+  if (serverUrl) {
+    console.log(`  ${c.bold('Server')}     ${c.info(serverUrl)} ${c.dim('(BYOS)')}`)
+  }
+
   console.log(`  ${c.bold('Output')}     ${c.info(basename(outputPath))}`)
   console.log(`  ${c.bold('Resolution')} ${width}x${height}`)
   console.log(`  ${c.bold('Duration')}   ${durationInFrames} frames @ ${fps}fps ${c.dim(`(${durationSeconds}s)`)}`)
@@ -252,6 +315,10 @@ async function main() {
       output: outputPath,
       audio: audioPath,
       silent: true,
+      serverUrl,
+      bundler,
+      configFile,
+      projectType,
       onProgress: ({ frame, total, fps: currentFps }) => {
         // Clear line and print progress (stays on same line)
         process.stdout.write(clearLine + cursorToStart + formatProgress(frame, total, currentFps || fps))
@@ -277,6 +344,12 @@ async function main() {
     if (error.message.includes('ffmpeg')) {
       console.error(c.warn('  Hint: Make sure FFmpeg is installed and available in your PATH'))
       console.error(c.dim('  Install: https://ffmpeg.org/download.html'))
+      console.error()
+    }
+
+    if (error.message.includes('Rsbuild')) {
+      console.error(c.warn('  Hint: Install @rsbuild/core and @rsbuild/plugin-vue'))
+      console.error(c.dim('  npm install -D @rsbuild/core @rsbuild/plugin-vue'))
       console.error()
     }
 

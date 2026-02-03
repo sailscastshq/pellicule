@@ -3,7 +3,7 @@
  *
  * This module provides:
  * 1. extractVideoConfig() - CLI uses this to read config from .vue files
- * 2. pelliculeMacroPlugin() - Vite plugin that strips the macro from output
+ * 2. pelliculeMacroVitePlugin() - Vite plugin that strips the macro from output
  *
  * Usage in components (no import needed):
  *
@@ -102,6 +102,48 @@ export function resolveVideoConfig({ componentConfig, cliFlags }) {
 }
 
 // ============================================================================
+// Shared Transform (bundler-agnostic)
+// ============================================================================
+
+/**
+ * Strip defineVideoConfig() calls and imports from source code.
+ *
+ * This is the core transform logic used by both the Vite plugin and
+ * the Rsbuild plugin. It's pure string manipulation — no bundler APIs.
+ *
+ * @param {string} code - Source code (typically a .vue file)
+ * @returns {string|null} Transformed code, or null if unchanged
+ */
+export function stripDefineVideoConfig(code) {
+  if (!code.includes('defineVideoConfig')) {
+    return null
+  }
+
+  let transformed = code
+
+  // Remove import of defineVideoConfig (in case user mistakenly imports it)
+  transformed = transformed.replace(
+    /import\s*\{[^}]*defineVideoConfig[^}]*\}\s*from\s*['"]pellicule['"]\s*;?\n?/g,
+    (match) => {
+      const other = match
+        .replace(/defineVideoConfig\s*,?\s*/g, '')
+        .replace(/,\s*\}/g, '}')
+        .replace(/\{\s*,/g, '{')
+        .replace(/\{\s*\}/g, '')
+      return other.includes('{') && !other.match(/\{\s*\}/) ? other : ''
+    }
+  )
+
+  // Remove the defineVideoConfig() call
+  transformed = transformed.replace(
+    /defineVideoConfig\s*\(\s*\{[\s\S]*?\}\s*\)\s*;?\n?/g,
+    ''
+  )
+
+  return transformed !== code ? transformed : null
+}
+
+// ============================================================================
 // Vite Plugin (strips macro from compiled output)
 // ============================================================================
 
@@ -109,38 +151,36 @@ export function resolveVideoConfig({ componentConfig, cliFlags }) {
  * Vite plugin that strips defineVideoConfig() calls.
  * Runs before Vue's compiler (enforce: 'pre').
  */
-export function pelliculeMacroPlugin() {
+export function pelliculeMacroVitePlugin() {
   return {
     name: 'pellicule:define-video-config',
     enforce: 'pre',
 
     transform(code, id) {
-      if (!id.endsWith('.vue') || !code.includes('defineVideoConfig')) {
-        return null
-      }
+      if (!id.endsWith('.vue')) return null
 
-      let transformed = code
+      const result = stripDefineVideoConfig(code)
+      return result !== null ? { code: result, map: null } : null
+    }
+  }
+}
 
-      // Remove import of defineVideoConfig (in case user mistakenly imports it)
-      transformed = transformed.replace(
-        /import\s*\{[^}]*defineVideoConfig[^}]*\}\s*from\s*['"]pellicule['"]\s*;?\n?/g,
-        (match) => {
-          const other = match
-            .replace(/defineVideoConfig\s*,?\s*/g, '')
-            .replace(/,\s*\}/g, '}')
-            .replace(/\{\s*,/g, '{')
-            .replace(/\{\s*\}/g, '')
-          return other.includes('{') && !other.match(/\{\s*\}/) ? other : ''
-        }
-      )
+// ============================================================================
+// Rsbuild Plugin (strips macro from compiled output)
+// ============================================================================
 
-      // Remove the defineVideoConfig() call
-      transformed = transformed.replace(
-        /defineVideoConfig\s*\(\s*\{[\s\S]*?\}\s*\)\s*;?\n?/g,
-        ''
-      )
-
-      return transformed !== code ? { code: transformed, map: null } : null
+/**
+ * Rsbuild plugin that strips defineVideoConfig() calls.
+ * Uses Rsbuild's api.transform() to process .vue files.
+ */
+export function pelliculeMacroRsbuildPlugin() {
+  return {
+    name: 'pellicule:define-video-config',
+    setup(api) {
+      api.transform({ test: /\.vue$/ }, ({ code }) => {
+        const result = stripDefineVideoConfig(code)
+        return result !== null ? result : code
+      })
     }
   }
 }

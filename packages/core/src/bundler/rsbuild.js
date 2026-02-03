@@ -61,10 +61,15 @@ export async function createVideoServer(options) {
     projectType = 'rsbuild'
   } = options
 
-  // Ensure @rsbuild/core is available
+  // Resolve Rsbuild from the user's project (not from pellicule's location).
+  // This is necessary because pellicule may be symlinked, and ESM import()
+  // resolves relative to the file's physical location, not the project root.
+  const projectRequire = createRequire(resolve(process.cwd(), 'package.json'))
+
   let createRsbuild, mergeRsbuildConfig
   try {
-    const rsbuildCore = await import('@rsbuild/core')
+    const rsbuildCorePath = projectRequire.resolve('@rsbuild/core')
+    const rsbuildCore = await import(rsbuildCorePath)
     createRsbuild = rsbuildCore.createRsbuild
     mergeRsbuildConfig = rsbuildCore.mergeRsbuildConfig
   } catch {
@@ -84,10 +89,11 @@ export async function createVideoServer(options) {
     height
   })
 
-  // Load @rsbuild/plugin-vue
+  // Load @rsbuild/plugin-vue (also resolved from user's project)
   let pluginVue
   try {
-    const mod = await import('@rsbuild/plugin-vue')
+    const pluginVuePath = projectRequire.resolve('@rsbuild/plugin-vue')
+    const mod = await import(pluginVuePath)
     pluginVue = mod.pluginVue
   } catch {
     throw new Error(
@@ -96,15 +102,28 @@ export async function createVideoServer(options) {
     )
   }
 
+  // Build resolve.alias — always alias 'pellicule' to the local source.
+  // For Shipwright projects, also add the conventional ~ and @ aliases
+  // that sails-hook-shipwright normally injects at runtime.
+  const aliases = {
+    'pellicule': pelliculeSrc
+  }
+
+  if (projectType === 'shipwright') {
+    const cwd = process.cwd()
+    aliases['@'] = resolve(cwd, 'assets', 'js')
+    aliases['~'] = resolve(cwd, 'assets')
+  }
+
   // Pellicule's required Rsbuild config
   const pelliculeConfig = {
     source: {
       entry: {
         index: resolve(tempDir, 'entry.js')
-      },
-      alias: {
-        'pellicule': pelliculeSrc
       }
+    },
+    resolve: {
+      alias: aliases
     },
     html: {
       template: resolve(tempDir, 'index.html')
@@ -133,9 +152,9 @@ export async function createVideoServer(options) {
 
   const rsbuild = await createRsbuild({ rsbuildConfig: finalConfig })
   const devServer = await rsbuild.createDevServer()
-  await devServer.listen()
+  const { port } = await devServer.listen()
 
-  const url = `http://localhost:${devServer.port}`
+  const url = `http://localhost:${port}`
 
   const cleanup = async () => {
     await devServer.close()

@@ -125,10 +125,11 @@ export function detectProject(cwd) {
  * Supported keys:
  *   - serverUrl  — URL of a running dev server (BYOS mode)
  *   - videosDir  — custom directory for video components
+ *   - outDir     — directory for rendered video output
  *   - bundler    — force 'vite' or 'rsbuild'
  *
  * @param {string} [cwd] - Directory to scan (defaults to process.cwd())
- * @returns {{ serverUrl?: string, videosDir?: string, bundler?: string }}
+ * @returns {{ serverUrl?: string, videosDir?: string, outDir?: string, bundler?: string }}
  */
 export function readPelliculeConfig(cwd) {
   const root = resolve(cwd || process.cwd())
@@ -145,6 +146,7 @@ export function readPelliculeConfig(cwd) {
     const result = {}
     if (typeof config.serverUrl === 'string') result.serverUrl = config.serverUrl
     if (typeof config.videosDir === 'string') result.videosDir = resolve(root, config.videosDir)
+    if (typeof config.outDir === 'string') result.outDir = resolve(root, config.outDir)
     if (typeof config.bundler === 'string') result.bundler = config.bundler
 
     return result

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { parseArgs } from 'node:util'
-import { resolve, extname, basename, dirname } from 'node:path'
+import { resolve, join, extname, basename, dirname } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { renderToMp4 } from '../src/render.js'
@@ -66,6 +66,7 @@ ${c.bold('INTEGRATION OPTIONS')}
   ${c.info('--bundler')} <name>        Force a bundler: vite or rsbuild
   ${c.info('--config')} <file>         Use a specific config file
   ${c.info('--videos-dir')} <path>     Custom directory for video components
+  ${c.info('--out-dir')} <path>        Directory for rendered video output
 
 ${c.bold('COMPONENT CONFIG')}
   Use ${c.highlight('defineVideoConfig')} in your component to set defaults:
@@ -80,7 +81,7 @@ ${c.bold('PROJECT CONFIG')}
 
   ${c.dim('{ "pellicule": { "serverUrl": "http://localhost:3000" } }')}
 
-  Supported keys: ${c.info('serverUrl')}, ${c.info('videosDir')}, ${c.info('bundler')}
+  Supported keys: ${c.info('serverUrl')}, ${c.info('videosDir')}, ${c.info('outDir')}, ${c.info('bundler')}
   Resolution: CLI flags > package.json > auto-detected > defaults
 
 ${c.bold('AUTO-DETECTION')}
@@ -158,6 +159,7 @@ async function main() {
       bundler: { type: 'string' },
       config: { type: 'string' },
       'videos-dir': { type: 'string' },
+      'out-dir': { type: 'string' },
       help: { type: 'boolean' },
       version: { type: 'boolean' }
     }
@@ -182,6 +184,7 @@ async function main() {
   const bundler = values.bundler || pkgConfig.bundler || detected.bundler
   const configFile = values.config ? resolve(values.config) : detected.configFile
   const videosDir = values['videos-dir'] ? resolve(values['videos-dir']) : pkgConfig.videosDir || detected.videosDir
+  const outDir = values['out-dir'] ? resolve(values['out-dir']) : pkgConfig.outDir || null
   const serverUrl = values['server-url'] || pkgConfig.serverUrl || detected.defaultServerUrl || null
   const projectType = detected.projectType
 
@@ -233,7 +236,16 @@ async function main() {
   const durationInFrames = resolvedConfig.durationInFrames
   const width = resolvedConfig.width
   const height = resolvedConfig.height
-  const output = values.output || './output.mp4'
+  let output
+  if (values.output) {
+    output = values.output
+  } else if (outDir) {
+    // Use component name as filename when outDir is configured
+    const componentName = basename(inputPath, '.vue')
+    output = join(outDir, `${componentName}.mp4`)
+  } else {
+    output = './output.mp4'
+  }
   const outputPath = resolve(output)
 
   // Parse optional range (start:end format)

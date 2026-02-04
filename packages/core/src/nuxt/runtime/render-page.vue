@@ -26,18 +26,17 @@ const width = parseInt(route.query.width || '1920', 10)
 const height = parseInt(route.query.height || '1080', 10)
 
 // ── Viewport styling ────────────────────────────────────────────────
-// Matches the CSS from the bundler entry scaffold (entry.js generateHtml)
-useHead({
-  style: [
-    {
-      children: [
-        '* { margin: 0; padding: 0; box-sizing: border-box; }',
-        `html, body { width: ${width}px; height: ${height}px; overflow: hidden; }`,
-        '#__nuxt { width: 100%; height: 100%; }'
-      ].join('\n')
-    }
-  ]
-})
+// Inject viewport CSS directly via DOM instead of useHead(), which
+// doesn't reliably apply styles in client-only (ssr: false) pages.
+if (import.meta.client) {
+  const style = document.createElement('style')
+  style.textContent = [
+    '* { margin: 0; padding: 0; box-sizing: border-box; }',
+    `html, body { width: ${width}px; height: ${height}px; overflow: hidden; }`,
+    '#__nuxt, #__nuxt > * { width: 100%; height: 100%; }'
+  ].join('\n')
+  document.head.appendChild(style)
+}
 
 // ── Frame injection (same keys as composables/keys.js) ──────────────
 const frameRef = ref(0)

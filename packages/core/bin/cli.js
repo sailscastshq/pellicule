@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { renderToMp4 } from '../src/render.js'
 import { extractVideoConfig, resolveVideoConfig } from '../src/macros/define-video-config.js'
 import { detectProject, readPelliculeConfig, resolveInputFile } from '../src/config/detect.js'
+import { startDevServer } from '../src/dev/server.js'
 
 // Read version from package.json
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -49,6 +50,8 @@ ${c.bold('USAGE')}
   ${c.highlight('pellicule')}                            ${c.dim('→ renders Video.vue to output.mp4')}
   ${c.highlight('pellicule')} <input.vue>                ${c.dim('→ custom input file')}
   ${c.highlight('pellicule')} <input.vue> -o <file>      ${c.dim('→ custom output path')}
+  ${c.highlight('pellicule dev')}                        ${c.dim('→ live preview in browser')}
+  ${c.highlight('pellicule dev')} <input.vue>            ${c.dim('→ preview a specific component')}
 
 ${c.bold('OPTIONS')}
   ${c.info('-o, --output')} <file>     Output file path ${c.dim('(default: ./output.mp4)')}
@@ -114,6 +117,12 @@ ${c.bold('EXAMPLES')}
   ${c.dim('# Force Rsbuild bundler')}
   ${c.highlight('pellicule')} Video.vue --bundler rsbuild
 
+  ${c.dim('# Live preview with hot-reload (Space to play, arrows to step)')}
+  ${c.highlight('pellicule dev')}
+
+  ${c.dim('# Preview a specific component at 720p')}
+  ${c.highlight('pellicule dev')} MyVideo -w 1280 -h 720
+
 ${c.bold('DURATION HELPER')}
   frames = seconds * fps
   ${c.dim('3 seconds at 30fps  = 90 frames')}
@@ -176,6 +185,10 @@ async function main() {
     process.exit(0)
   }
 
+  // ── Subcommand detection ─────────────────────────────────────────
+  const isDevMode = positionals[0] === 'dev'
+  if (isDevMode) positionals.shift()
+
   // ── Auto-detection ────────────────────────────────────────────────
   const detected = detectProject()
   const pkgConfig = readPelliculeConfig()
@@ -187,6 +200,15 @@ async function main() {
   const outDir = values['out-dir'] ? resolve(values['out-dir']) : pkgConfig.outDir || null
   const serverUrl = values['server-url'] || pkgConfig.serverUrl || detected.defaultServerUrl || null
   const projectType = detected.projectType
+
+  const projectLabels = {
+    laravel: 'Laravel',
+    vite: 'Vite',
+    rsbuild: 'Rsbuild',
+    shipwright: 'Boring Stack (Shipwright)',
+    nuxt: 'Nuxt',
+    quasar: 'Quasar'
+  }
 
   // Validate bundler flag
   if (values.bundler && !['vite', 'rsbuild'].includes(values.bundler)) {
@@ -267,15 +289,70 @@ async function main() {
   if (isNaN(durationInFrames) || durationInFrames <= 0) fail(`Invalid duration value: ${durationInFrames}`)
   if (isNaN(width) || width <= 0) fail(`Invalid width value: ${width}`)
   if (isNaN(height) || height <= 0) fail(`Invalid height value: ${height}`)
-  if (startFrame >= endFrame) fail(`Start frame (${startFrame}) must be less than end frame (${endFrame})`)
-  if (endFrame > durationInFrames) fail(`End frame (${endFrame}) exceeds duration (${durationInFrames})`)
+  if (!isDevMode && startFrame >= endFrame) fail(`Start frame (${startFrame}) must be less than end frame (${endFrame})`)
+  if (!isDevMode && endFrame > durationInFrames) fail(`End frame (${endFrame}) exceeds duration (${durationInFrames})`)
+
+  const durationSeconds = (durationInFrames / fps).toFixed(1)
+
+  // ── Dev mode ─────────────────────────────────────────────────────
+  if (isDevMode) {
+    printBanner()
+
+    console.log(`  ${c.bold('Mode')}       ${c.highlight('dev')} ${c.dim('(live preview)')}`)
+    console.log(`  ${c.bold('Input')}      ${c.info(basename(inputPath))}`)
+    if (componentConfig) {
+      console.log(`  ${c.bold('Config')}     ${c.highlight('defineVideoConfig')} ${c.dim('detected ✓')}`)
+    }
+    if (projectType !== 'standalone') {
+      console.log(`  ${c.bold('Project')}    ${c.highlight(projectLabels[projectType] || projectType)} ${c.dim('detected ✓')}`)
+    }
+    if (serverUrl) {
+      console.log(`  ${c.bold('Server')}     ${c.info(serverUrl)} ${c.dim('(BYOS)')}`)
+    }
+    console.log(`  ${c.bold('Resolution')} ${width}x${height}`)
+    console.log(`  ${c.bold('Duration')}   ${durationInFrames} frames @ ${fps}fps ${c.dim(`(${durationSeconds}s)`)}`)
+    console.log()
+
+    // For Nuxt/Quasar, construct /pellicule render page URL
+    let devServerUrl = serverUrl
+    if ((projectType === 'nuxt' || projectType === 'quasar') && serverUrl) {
+      const componentName = basename(inputPath, '.vue')
+      devServerUrl = `${serverUrl.replace(/\/$/, '')}/pellicule?component=${encodeURIComponent(componentName)}`
+    }
+
+    try {
+      const { url } = await startDevServer({
+        input: inputPath,
+        fps,
+        durationInFrames,
+        width,
+        height,
+        serverUrl: devServerUrl,
+        bundler,
+        configFile,
+        projectType,
+        version: VERSION
+      })
+
+      console.log(`  ${c.highlight('Preview ready!')} ${c.info(url)}`)
+      console.log()
+      console.log(`  ${c.dim('Controls:')} ${c.bold('Space')} play/pause  ${c.bold('←→')} step frame  ${c.bold('Home/End')} first/last`)
+      console.log(`  ${c.dim('Press')} ${c.bold('Ctrl+C')} ${c.dim('to stop')}`)
+      console.log()
+
+      // Keep process alive
+      await new Promise(() => {})
+    } catch (error) {
+      console.error(c.error(`  Error: ${error.message}`))
+      process.exit(1)
+    }
+  }
 
   // Print banner and config
   printBanner()
 
   const isPartialRender = startFrame > 0 || endFrame < durationInFrames
   const framesToRender = endFrame - startFrame
-  const durationSeconds = (durationInFrames / fps).toFixed(1)
   const partialSeconds = (framesToRender / fps).toFixed(1)
 
   console.log(`  ${c.bold('Input')}      ${c.info(basename(inputPath))}`)
@@ -283,16 +360,7 @@ async function main() {
     console.log(`  ${c.bold('Config')}     ${c.highlight('defineVideoConfig')} ${c.dim('detected ✓')}`)
   }
 
-  // Show detected project info
   if (projectType !== 'standalone') {
-    const projectLabels = {
-      laravel: 'Laravel',
-      vite: 'Vite',
-      rsbuild: 'Rsbuild',
-      shipwright: 'Boring Stack (Shipwright)',
-      nuxt: 'Nuxt',
-      quasar: 'Quasar'
-    }
     console.log(`  ${c.bold('Project')}    ${c.highlight(projectLabels[projectType] || projectType)} ${c.dim('detected ✓')}`)
   }
   if (serverUrl) {

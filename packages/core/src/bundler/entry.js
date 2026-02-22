@@ -8,6 +8,7 @@
 
 import { writeFile, mkdir, rm } from 'fs/promises'
 import { join, basename } from 'path'
+import { generateOverlayScript } from '../dev/overlay.js'
 
 /**
  * Generate the entry HTML that wraps the video at the given dimensions.
@@ -15,9 +16,69 @@ import { join, basename } from 'path'
  * @param {object} options
  * @param {number} options.width
  * @param {number} options.height
+ * @param {boolean} [options.preview] - Whether to inject the dev overlay
+ * @param {number} [options.fps] - FPS (used for overlay display)
+ * @param {number} [options.durationInFrames] - Total frames (used for overlay)
+ * @param {string} [options.version] - Package version (shown in overlay)
  * @returns {string}
  */
-export function generateHtml({ width = 1920, height = 1080 }) {
+export function generateHtml({ width = 1920, height = 1080, preview = false, fps = 30, durationInFrames = 90, version = '' }) {
+  const overlayHtml = preview ? generateOverlayScript({ fps, durationInFrames, version }) : ''
+
+  if (preview) {
+    // Preview mode: scale the video canvas to fit the browser window
+    // while maintaining aspect ratio, with the overlay bar below
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #111; }
+    #pellicule-canvas {
+      width: ${width}px;
+      height: ${height}px;
+      transform-origin: top left;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    #app { width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <div id="pellicule-canvas">
+    <div id="app"></div>
+  </div>
+  <script type="module" src="./entry.js"></script>
+  <script>
+    (function() {
+      const VIDEO_W = ${width};
+      const VIDEO_H = ${height};
+      const OVERLAY_H = 64;
+      const canvas = document.getElementById('pellicule-canvas');
+
+      function fitToWindow() {
+        const winW = window.innerWidth;
+        const winH = window.innerHeight - OVERLAY_H;
+        const scale = Math.min(winW / VIDEO_W, winH / VIDEO_H);
+        const offsetX = (winW - VIDEO_W * scale) / 2;
+        const offsetY = (winH - VIDEO_H * scale) / 2;
+        canvas.style.transform = 'scale(' + scale + ')';
+        canvas.style.left = offsetX + 'px';
+        canvas.style.top = offsetY + 'px';
+      }
+
+      fitToWindow();
+      window.addEventListener('resize', fitToWindow);
+    })();
+  </script>
+  ${overlayHtml}
+</body>
+</html>`
+  }
+
+  // Render mode: fixed pixel dimensions matching Playwright viewport
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -99,16 +160,20 @@ try {
  * @param {string} options.inputPath - Absolute path to the .vue file
  * @param {number} options.width
  * @param {number} options.height
+ * @param {boolean} [options.preview] - Whether to inject the dev overlay
+ * @param {number} [options.fps] - FPS (used for overlay)
+ * @param {number} [options.durationInFrames] - Total frames (used for overlay)
+ * @param {string} [options.version] - Package version (shown in overlay)
  * @returns {Promise<{ tempDir: string, cleanup: () => Promise<void> }>}
  */
-export async function writeTempEntry({ inputPath, width = 1920, height = 1080 }) {
+export async function writeTempEntry({ inputPath, width = 1920, height = 1080, preview = false, fps = 30, durationInFrames = 90, version = '' }) {
   const inputDir = join(inputPath, '..')
   const inputFile = basename(inputPath)
   const tempDir = join(inputDir, '.pellicule')
 
   await mkdir(tempDir, { recursive: true })
 
-  const html = generateHtml({ width, height })
+  const html = generateHtml({ width, height, preview, fps, durationInFrames, version })
   const js = generateEntryJs({
     componentPath: `../${inputFile}`,
     width,

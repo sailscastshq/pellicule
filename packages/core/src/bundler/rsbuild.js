@@ -50,6 +50,10 @@ async function loadUserConfig(configFile, projectType) {
  * @param {number} options.height - Video height
  * @param {string|null} [options.configFile] - Path to the user's config file
  * @param {'rsbuild'|'shipwright'} [options.projectType] - Which config format to read
+ * @param {boolean} [options.preview] - Whether to inject the dev preview overlay
+ * @param {number} [options.fps] - FPS (passed to overlay when preview=true)
+ * @param {number} [options.durationInFrames] - Total frames (passed to overlay when preview=true)
+ * @param {string} [options.version] - Package version (shown in overlay)
  * @returns {Promise<{ server: object, url: string, cleanup: function, tempDir: string }>}
  */
 export async function createVideoServer(options) {
@@ -58,7 +62,11 @@ export async function createVideoServer(options) {
     width = 1920,
     height = 1080,
     configFile = null,
-    projectType = 'rsbuild'
+    projectType = 'rsbuild',
+    preview = false,
+    fps = 30,
+    durationInFrames = 90,
+    version = ''
   } = options
 
   // Resolve Rsbuild from the user's project (not from pellicule's location).
@@ -86,7 +94,11 @@ export async function createVideoServer(options) {
   const { tempDir, cleanup: cleanupTemp } = await writeTempEntry({
     inputPath,
     width,
-    height
+    height,
+    preview,
+    fps,
+    durationInFrames,
+    version
   })
 
   // Load @rsbuild/plugin-vue (also resolved from user's project)

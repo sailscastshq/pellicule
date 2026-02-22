@@ -12,9 +12,13 @@ import { join, dirname } from 'path'
  * @param {'vite'|'rsbuild'} options.bundler - Which bundler adapter to use
  * @param {string|null} options.configFile - Path to the user's config file
  * @param {string} options.projectType - Detected project type (for Shipwright config reading)
+ * @param {boolean} [options.preview] - Whether to inject the dev preview overlay
+ * @param {number} [options.fps] - FPS (passed to overlay when preview=true)
+ * @param {number} [options.durationInFrames] - Total frames (passed to overlay when preview=true)
+ * @param {string} [options.version] - Package version (shown in overlay)
  * @returns {Promise<{ url: string, cleanup: function, tempDir: string }>}
  */
-async function startBundlerServer(options) {
+export async function startBundlerServer(options) {
   const { bundler = 'vite', ...serverOptions } = options
 
   if (bundler === 'rsbuild') {

@@ -1,8 +1,8 @@
 ---
 name: rendering
-description: CLI options, rendering modes, and framework integration
+description: CLI options, rendering modes, dev preview, and framework integration
 metadata:
-  tags: render, cli, output, mp4, ffmpeg, byos, nuxt, quasar
+  tags: render, cli, output, mp4, ffmpeg, byos, nuxt, quasar, dev, preview
 ---
 
 # Rendering Videos
@@ -232,10 +232,56 @@ sudo apt install ffmpeg
 choco install ffmpeg
 ```
 
+## Dev Preview
+
+Use `pellicule dev` to preview your video in the browser with hot-reload and interactive controls — no full render needed.
+
+```bash
+# Preview the default Video.vue
+npx pellicule dev
+
+# Preview a specific component
+npx pellicule dev MyVideo
+
+# Preview at 720p
+npx pellicule dev MyVideo -w 1280 -h 720
+```
+
+The preview opens in your browser with:
+- **Play/Pause** — auto-advance frames at the configured FPS
+- **Frame stepping** — `←` and `→` arrow keys
+- **Timeline scrubber** — seek to any frame
+- **Frame counter** — current frame, time, and FPS display
+
+All file changes are hot-reloaded instantly via Vite HMR.
+
+### How it works
+
+`pellicule dev` reuses the same bundler pipeline and `window.__PELLICULE_SET_FRAME__()` mechanism as `pellicule`. The only difference is it opens a browser instead of launching headless Playwright. What you see in the preview is what you get in the final render.
+
+### BYOS projects (Nuxt/Quasar)
+
+Start your dev server first, then run `pellicule dev`:
+
+```bash
+# Terminal 1
+npm run dev
+
+# Terminal 2
+npx pellicule dev InvoiceDemo
+```
+
+### Recommended workflow
+
+1. Start the preview: `npx pellicule dev`
+2. Edit your component, save — HMR refreshes instantly
+3. Scrub/play to check the result
+4. When happy, render the final video: `npx pellicule`
+
 ## Tips
 
 1. **Start small** - Test with short durations first (`-d 30`)
-2. **Check the preview** - First frame renders quickly, check it looks right
+2. **Use dev preview** - `pellicule dev` for instant visual feedback while iterating
 3. **Use meaningful names** - `-o project-intro-v2.mp4`
 4. **Use partial renders** - `-r 0:30` to preview just the first second
 5. **Use `defineVideoConfig`** - Set duration in the component so you don't need CLI flags

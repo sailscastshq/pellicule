@@ -18,6 +18,30 @@ import { join, dirname } from 'path'
  */
 
 /**
+ * @typedef {{
+ *   goto: (url: string, options: { waitUntil: 'networkidle' }) => Promise<unknown>,
+ *   waitForFunction: (callback: () => boolean, options: { timeout: number }) => Promise<unknown>,
+ *   evaluate: (callback: (...args: any[]) => unknown, ...args: any[]) => Promise<any>
+ * }} RenderPageLike
+ */
+
+/**
+ * @typedef {{
+ *   page: RenderPageLike,
+ *   url: string,
+ *   fps: number,
+ *   width: number,
+ *   height: number,
+ *   durationInFrames: number,
+ *   startFrame: number,
+ *   actualEndFrame: number,
+ *   framesToRender: number,
+ *   onProgress?: ProgressCallback,
+ *   log: (...args: any[]) => void
+ * }} RenderSessionLike
+ */
+
+/**
  * Create a video server using the appropriate bundler adapter.
  *
  * @param {BundlerServerOptions} options
@@ -35,6 +59,22 @@ export async function startBundlerServer(options) {
   // Default: Vite adapter (always available)
   const { createVideoServer } = await import('../bundler/vite.js')
   return createVideoServer(serverOptions)
+}
+
+/**
+ * Build the renderer page URL with the active runtime config encoded as query params.
+ *
+ * @param {string} url
+ * @param {{ fps: number, durationInFrames: number, width: number, height: number }} options
+ * @returns {string}
+ */
+export function buildRenderPageUrl(url, options) {
+  const resolved = new URL(url, 'http://localhost')
+  resolved.searchParams.set('fps', String(options.fps))
+  resolved.searchParams.set('duration', String(options.durationInFrames))
+  resolved.searchParams.set('width', String(options.width))
+  resolved.searchParams.set('height', String(options.height))
+  return resolved.toString()
 }
 
 /**
@@ -149,11 +189,11 @@ async function createRenderSession(options) {
 }
 
 /**
- * @param {Awaited<ReturnType<typeof createRenderSession>>} session
+ * @param {RenderSessionLike} session
  * @param {(context: RenderFrameContext) => Promise<void>} handleFrame
  * @returns {Promise<void>}
  */
-async function renderFrameSequence(session, handleFrame) {
+export async function renderFrameSequence(session, handleFrame) {
   const {
     page,
     url,
@@ -173,8 +213,7 @@ async function renderFrameSequence(session, handleFrame) {
     : ''
   log(`Rendering ${framesToRender} frames at ${fps}fps (${width}x${height})${rangeInfo}`)
 
-  const separator = url.includes('?') ? '&' : '?'
-  const pageUrl = `${url}${separator}fps=${fps}&duration=${durationInFrames}&width=${width}&height=${height}`
+  const pageUrl = buildRenderPageUrl(url, { fps, durationInFrames, width, height })
   await page.goto(pageUrl, { waitUntil: 'networkidle' })
   await page.waitForFunction(() => /** @type {PelliculeWindow} */ (window).__PELLICULE_READY__ === true, { timeout: 10000 })
 
@@ -189,7 +228,11 @@ async function renderFrameSequence(session, handleFrame) {
     await page.evaluate((f) => /** @type {PelliculeWindow} */ (window).__PELLICULE_SET_FRAME__?.(f), frame)
 
     const outputFrameNum = frame - startFrame
-    await handleFrame({ page, frame, outputFrameNum })
+    await handleFrame({
+      page: /** @type {import('playwright').Page} */ (page),
+      frame,
+      outputFrameNum
+    })
 
     if (onProgress) {
       const elapsed = Date.now() - renderStart

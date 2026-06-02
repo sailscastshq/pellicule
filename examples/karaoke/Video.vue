@@ -10,10 +10,11 @@ defineVideoConfig({
 })
 
 import { computed } from 'vue'
-import { useFrame, useVideoConfig, interpolate, Easing } from 'pellicule'
+import { useFrame, useVideoConfig, interpolate, Easing, secondsToFrames } from 'pellicule'
 
 const frame = useFrame()
 const { fps } = useVideoConfig()
+const at = (seconds) => secondsToFrames(seconds, fps)
 
 // Vibrant color palette
 const colors = [
@@ -29,22 +30,22 @@ const colors = [
 
 // Lyrics with timing
 const lyrics = [
-  { text: 'Never', start: fps * 0.0, end: fps * 0.5 },
-  { text: 'gonna', start: fps * 0.5, end: fps * 1.0 },
-  { text: 'give', start: fps * 1.0, end: fps * 1.4 },
-  { text: 'you', start: fps * 1.4, end: fps * 1.8 },
-  { text: 'up', start: fps * 1.8, end: fps * 2.5 },
+  { text: 'Never', start: at(0.0), end: at(0.5) },
+  { text: 'gonna', start: at(0.5), end: at(1.0) },
+  { text: 'give', start: at(1.0), end: at(1.4) },
+  { text: 'you', start: at(1.4), end: at(1.8) },
+  { text: 'up', start: at(1.8), end: at(2.5) },
 
-  { text: 'Never', start: fps * 3.0, end: fps * 3.5 },
-  { text: 'gonna', start: fps * 3.5, end: fps * 4.0 },
-  { text: 'let', start: fps * 4.0, end: fps * 4.4 },
-  { text: 'you', start: fps * 4.4, end: fps * 4.8 },
-  { text: 'down', start: fps * 4.8, end: fps * 5.5 },
+  { text: 'Never', start: at(3.0), end: at(3.5) },
+  { text: 'gonna', start: at(3.5), end: at(4.0) },
+  { text: 'let', start: at(4.0), end: at(4.4) },
+  { text: 'you', start: at(4.4), end: at(4.8) },
+  { text: 'down', start: at(4.8), end: at(5.5) },
 
-  { text: 'Never', start: fps * 6.0, end: fps * 6.5 },
-  { text: 'gonna', start: fps * 6.5, end: fps * 7.0 },
-  { text: 'run', start: fps * 7.0, end: fps * 7.5 },
-  { text: 'around', start: fps * 7.5, end: fps * 8.5 },
+  { text: 'Never', start: at(6.0), end: at(6.5) },
+  { text: 'gonna', start: at(6.5), end: at(7.0) },
+  { text: 'run', start: at(7.0), end: at(7.5) },
+  { text: 'around', start: at(7.5), end: at(8.5) },
 ]
 
 // Group into lines
@@ -55,7 +56,7 @@ const lines = computed(() => {
   lyrics.forEach((word, i) => {
     currentLine.push({ ...word, globalIndex: i })
     const next = lyrics[i + 1]
-    if (!next || next.start - word.end > fps * 0.8) {
+    if (!next || next.start - word.end > at(0.8)) {
       result.push([...currentLine])
       currentLine = []
     }
@@ -67,8 +68,8 @@ const lines = computed(() => {
 const currentLineIndex = computed(() => {
   for (let i = 0; i < lines.value.length; i++) {
     const line = lines.value[i]
-    const start = line[0].start - fps * 0.3
-    const end = line[line.length - 1].end + fps * 0.5
+    const start = line[0].start - at(0.3)
+    const end = line[line.length - 1].end + at(0.5)
     if (frame.value >= start && frame.value < end) return i
   }
   return -1
@@ -195,7 +196,7 @@ const burstParticles = computed(() => {
 })
 
 // Progress bar with rainbow
-const progressWidth = computed(() => (frame.value / (fps * 10)) * 100)
+const progressWidth = computed(() => (frame.value / at(10)) * 100)
 const progressGradient = computed(() => {
   const hue = (frame.value * 3) % 360
   return `linear-gradient(90deg,

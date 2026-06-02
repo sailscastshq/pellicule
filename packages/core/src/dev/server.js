@@ -11,6 +11,7 @@
  */
 
 import { execFile } from 'node:child_process'
+import { startAudioPreviewServer } from './audio-server.js'
 import { startBundlerServer } from '../renderer/render.js'
 
 /**
@@ -44,6 +45,8 @@ function openBrowser(url) {
  * @param {string|null} [options.serverUrl] - BYOS server URL (Nuxt/Quasar)
  * @param {'vite'|'rsbuild'} [options.bundler]
  * @param {boolean} [options.syncConfigWithComponent]
+ * @param {string|null} [options.audio]
+ * @param {number|null} [options.audioDurationInSeconds]
  * @param {string|null} [options.configFile]
  * @param {import('../types.js').ProjectType} [options.projectType]
  * @param {string} [options.version] - Package version (shown in overlay)
@@ -59,19 +62,20 @@ export async function startDevServer(options) {
     serverUrl = null,
     bundler = 'vite',
     syncConfigWithComponent = false,
+    audio = null,
+    audioDurationInSeconds = null,
     configFile = null,
     projectType = 'standalone',
     version = ''
   } = options
 
   let url
-  /** @type {AsyncCleanup} */
-  let cleanup
+  /** @type {AsyncCleanup[]} */
+  const cleanupTasks = []
 
   if (serverUrl) {
     // BYOS mode (Nuxt/Quasar) — just use the existing server
     url = serverUrl
-    cleanup = async () => {}
   } else {
     // Start a bundler dev server with preview overlay enabled
     const server = await startBundlerServer({
@@ -87,16 +91,44 @@ export async function startDevServer(options) {
       version
     })
     url = server.url
-    cleanup = server.cleanup
+    cleanupTasks.push(server.cleanup)
   }
 
-  // Build the full URL with config params
-  const separator = url.includes('?') ? '&' : '?'
-  const configRefresh = syncConfigWithComponent ? '&config-refresh=1' : ''
-  const fullUrl = `${url}${separator}fps=${fps}&duration=${durationInFrames}&width=${width}&height=${height}&preview=1${configRefresh}`
+  /** @type {string|null} */
+  let audioUrl = null
+  if (audio) {
+    const audioServer = await startAudioPreviewServer(audio)
+    audioUrl = audioServer.url
+    cleanupTasks.push(audioServer.cleanup)
+  }
+
+  const fullUrl = new URL(url)
+  fullUrl.searchParams.set('fps', String(fps))
+  fullUrl.searchParams.set('duration', String(durationInFrames))
+  fullUrl.searchParams.set('width', String(width))
+  fullUrl.searchParams.set('height', String(height))
+  fullUrl.searchParams.set('preview', '1')
+
+  if (syncConfigWithComponent) {
+    fullUrl.searchParams.set('config-refresh', '1')
+  }
+  if (audioUrl) {
+    fullUrl.searchParams.set('audio-url', audioUrl)
+  }
+  if (audioDurationInSeconds !== null) {
+    fullUrl.searchParams.set('audio-duration', String(audioDurationInSeconds))
+  }
 
   // Open in the user's default browser
-  openBrowser(fullUrl)
+  openBrowser(fullUrl.toString())
+
+  /** @type {AsyncCleanup} */
+  const cleanup = async () => {
+    const tasks = cleanupTasks.slice().reverse()
+    for (const task of tasks) {
+      await task()
+    }
+  }
 
   // Keep process alive and handle graceful shutdown
   const shutdown = async () => {
@@ -111,5 +143,5 @@ export async function startDevServer(options) {
     void shutdown()
   })
 
-  return { url: fullUrl, cleanup }
+  return { url: fullUrl.toString(), cleanup }
 }

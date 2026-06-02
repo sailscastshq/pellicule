@@ -8,7 +8,6 @@
 
 import { writeFile, mkdir, rm } from 'fs/promises'
 import { join, basename } from 'path'
-import { generateOverlayScript } from '../dev/overlay.js'
 
 /**
  * Generate the entry HTML that wraps the video at the given dimensions.
@@ -23,8 +22,6 @@ import { generateOverlayScript } from '../dev/overlay.js'
  * @returns {string}
  */
 export function generateHtml({ width = 1920, height = 1080, preview = false, fps = 30, durationInFrames = 90, version = '' }) {
-  const overlayHtml = preview ? generateOverlayScript({ fps, durationInFrames, version }) : ''
-
   if (preview) {
     // Preview mode: scale the video canvas to fit the browser window
     // while maintaining aspect ratio, with the overlay bar below
@@ -73,7 +70,6 @@ export function generateHtml({ width = 1920, height = 1080, preview = false, fps
       window.addEventListener('resize', fitToWindow);
     })();
   </script>
-  ${overlayHtml}
 </body>
 </html>`
   }
@@ -105,13 +101,15 @@ export function generateHtml({ width = 1920, height = 1080, preview = false, fps
  * @param {number} options.width
  * @param {number} options.height
  * @param {boolean} [options.preview] - Whether the entry is used for dev preview
+ * @param {string} [options.version]
  * @returns {string}
  */
-export function generateEntryJs({ componentPath, width = 1920, height = 1080, preview = false }) {
+export function generateEntryJs({ componentPath, width = 1920, height = 1080, preview = false, version = '' }) {
   return `
 import { createApp, ref, provide, h, nextTick } from 'vue'
 import VideoComponent from '${componentPath}'
 import { buildVideoConfigUrl, haveVideoConfigChanged, parseVideoConfigFromSearch, resolveVideoConfig } from 'pellicule/runtime/config'
+import { setupPreviewOverlay } from 'pellicule/runtime/preview'
 import { waitForRenderReady } from 'pellicule/runtime/ready'
 
 // Pellicule injection keys (must match composables.js)
@@ -123,6 +121,10 @@ const config = parseVideoConfigFromSearch(window.location.search, {
   width: ${width},
   height: ${height}
 })
+const rawAudioDurationInSeconds = params.get('audio-duration')
+const audioDurationInSeconds = rawAudioDurationInSeconds
+  ? Number(rawAudioDurationInSeconds)
+  : null
 const allowPreviewConfigSync = ${preview ? 'true' : 'false'} && params.get('config-refresh') === '1'
 let pendingReload = false
 
@@ -135,7 +137,12 @@ globalThis.__PELLICULE_ON_CONFIG__ = (componentConfig) => {
     return
   }
 
-  const nextConfig = resolveVideoConfig(config, componentConfig)
+  const nextConfig = resolveVideoConfig(config, {
+    ...componentConfig,
+    ...(Number.isFinite(audioDurationInSeconds) && audioDurationInSeconds > 0
+      ? { audioDurationInSeconds }
+      : {})
+  })
   if (!haveVideoConfigChanged(config, nextConfig)) {
     return
   }
@@ -164,6 +171,12 @@ try {
   app.mount('#app')
 
   if (!pendingReload) {
+    if (${preview ? 'true' : 'false'}) {
+      setupPreviewOverlay({
+        version: ${JSON.stringify(version)},
+        setFrame: window.__PELLICULE_SET_FRAME__
+      })
+    }
     await nextTick()
     await waitForRenderReady()
     window.__PELLICULE_READY__ = true
@@ -201,7 +214,8 @@ export async function writeTempEntry({ inputPath, width = 1920, height = 1080, p
     componentPath: `../${inputFile}`,
     width,
     height,
-    preview
+    preview,
+    version
   })
 
   await writeFile(join(tempDir, 'index.html'), html)

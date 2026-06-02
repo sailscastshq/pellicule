@@ -4,6 +4,8 @@
  * @typedef {import('../types.js').VideoConfigOverrides} VideoConfigOverrides
  */
 
+import { secondsToFrames } from '../utils/timing.js'
+
 /** @type {Readonly<VideoConfig>} */
 const DEFAULT_VIDEO_CONFIG = Object.freeze({
   fps: 30,
@@ -73,7 +75,12 @@ export function resolveVideoConfig(baseConfig = DEFAULT_VIDEO_CONFIG, overrides 
   } else {
     const durationInSeconds = parsePositiveNumber(overrides.durationInSeconds)
     if (durationInSeconds !== null) {
-      resolved.durationInFrames = Math.round(durationInSeconds * resolved.fps)
+      resolved.durationInFrames = secondsToFrames(durationInSeconds, resolved.fps)
+    } else {
+      const audioDurationInSeconds = parsePositiveNumber(overrides.audioDurationInSeconds)
+      if (audioDurationInSeconds !== null) {
+        resolved.durationInFrames = secondsToFrames(audioDurationInSeconds, resolved.fps)
+      }
     }
   }
 

@@ -89,11 +89,16 @@ function generateRenderPage({ component, fps, duration, width, height }) {
     import { Quasar } from 'quasar'
     import 'quasar/dist/quasar.css'
     import { buildVideoConfigUrl, haveVideoConfigChanged, parseVideoConfigFromSearch, resolveVideoConfig } from 'pellicule/runtime/config'
+    import { setupPreviewOverlay } from 'pellicule/runtime/preview'
     import { waitForRenderReady } from 'pellicule/runtime/ready'
 
     const componentName = ${safeComponent}
     const params = new URLSearchParams(window.location.search)
     const isPreview = params.get('preview') === '1'
+    const rawAudioDurationInSeconds = params.get('audio-duration')
+    const audioDurationInSeconds = rawAudioDurationInSeconds
+      ? Number(rawAudioDurationInSeconds)
+      : null
     const allowPreviewConfigSync = isPreview && params.get('config-refresh') === '1'
     const config = parseVideoConfigFromSearch(window.location.search, {
       fps: ${parseInt(fps)},
@@ -119,7 +124,12 @@ function generateRenderPage({ component, fps, duration, width, height }) {
             return
           }
 
-          const nextConfig = resolveVideoConfig(config, componentConfig)
+          const nextConfig = resolveVideoConfig(config, {
+            ...componentConfig,
+            ...(Number.isFinite(audioDurationInSeconds) && audioDurationInSeconds > 0
+              ? { audioDurationInSeconds }
+              : {})
+          })
           if (!haveVideoConfigChanged(config, nextConfig)) {
             return
           }
@@ -144,6 +154,12 @@ function generateRenderPage({ component, fps, duration, width, height }) {
             frameRef.value = frame
             await nextTick()
             await waitForRenderReady()
+          }
+
+          if (isPreview) {
+            setupPreviewOverlay({
+              setFrame: window.__PELLICULE_SET_FRAME__
+            })
           }
 
           await nextTick()

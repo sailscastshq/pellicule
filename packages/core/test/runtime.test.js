@@ -8,6 +8,7 @@ import {
   resolveVideoConfig
 } from '../src/runtime/config.js'
 import { waitForRenderReady } from '../src/runtime/ready.js'
+import { framesToSeconds, secondsToFrames } from '../src/utils/timing.js'
 
 function createMockImage(options = {}) {
   const listeners = new Map()
@@ -49,6 +50,20 @@ test('resolveVideoConfig derives duration from durationInSeconds using the resol
   })
 })
 
+test('resolveVideoConfig derives duration from audioDurationInSeconds using the resolved fps', () => {
+  const config = resolveVideoConfig(
+    { fps: 30, durationInFrames: 90, width: 1920, height: 1080 },
+    { fps: 48, audioDurationInSeconds: 2.5 }
+  )
+
+  assert.deepEqual(config, {
+    fps: 48,
+    durationInFrames: 120,
+    width: 1920,
+    height: 1080
+  })
+})
+
 test('parseVideoConfigFromSearch reads query params with sane fallbacks', () => {
   const config = parseVideoConfigFromSearch('?fps=48&duration=240&width=1280', {
     fps: 30,
@@ -76,6 +91,23 @@ test('buildVideoConfigUrl preserves unrelated query params while replacing confi
   assert.equal(
     url,
     'http://localhost:4173/pellicule?component=Demo&preview=1&fps=60&duration=180&width=1080&height=1920'
+  )
+})
+
+test('buildVideoConfigUrl preserves unrelated audio preview params', () => {
+  const url = buildVideoConfigUrl(
+    'http://localhost:4173/pellicule?preview=1&audio-url=http%3A%2F%2F127.0.0.1%3A4174%2Fsong.wav&audio-duration=4.25',
+    {
+      fps: 60,
+      durationInFrames: 255,
+      width: 1080,
+      height: 1920
+    }
+  )
+
+  assert.equal(
+    url,
+    'http://localhost:4173/pellicule?preview=1&audio-url=http%3A%2F%2F127.0.0.1%3A4174%2Fsong.wav&audio-duration=4.25&fps=60&duration=255&width=1080&height=1920'
   )
 })
 
@@ -155,4 +187,12 @@ test('waitForRenderReady rejects on broken images', async () => {
     }),
     /Image failed to load: https:\/\/example.com\/broken.png/
   )
+})
+
+test('secondsToFrames rounds to the nearest frame', () => {
+  assert.equal(secondsToFrames(2.5, 48), 120)
+})
+
+test('framesToSeconds converts frame counts back to seconds', () => {
+  assert.equal(framesToSeconds(120, 48), 2.5)
 })

@@ -60,9 +60,11 @@ npx pellicule Video.vue -d 90 -o hello.mp4
 | `--preset` | Output preset (`mp4`, `webm`) | `mp4` |
 | `--quality` | Output quality (`draft`, `standard`, `high`) | `standard` |
 | `-d, --duration` | Duration in frames | `90` |
+| `-A, --duration-from-audio` | Use the audio file length as total duration | `false` |
 | `-f, --fps` | Frames per second | `30` |
 | `-w, --width` | Video width | `1920` |
 | `-h, --height` | Video height | `1080` |
+| `-a, --audio` | Audio file to mux into the export | none |
 
 Example output commands:
 
@@ -75,6 +77,9 @@ npx pellicule Video.vue --preset webm
 
 # Higher-quality MP4
 npx pellicule Video.vue --quality high
+
+# Let the soundtrack define total duration
+npx pellicule Karaoke.vue --audio song.mp3 --duration-from-audio
 ```
 
 ## API
@@ -88,7 +93,15 @@ npx pellicule Video.vue --quality high
 
 - `interpolate(frame, inputRange, outputRange, options)` - Map values between ranges
 - `sequence(frame, steps)` - Chain multiple animations together
+- `secondsToFrames(seconds, fps)` - Turn audio or lyric timings into whole frames
+- `framesToSeconds(frames, fps)` - Convert frame counts back to seconds
 - `Easing` - Built-in easing functions: `linear`, `easeIn`, `easeOut`, `easeInOut`
+
+## Audio-Aware Workflow
+
+- Add `audio` to `defineVideoConfig()` or pass `--audio <file>` to mux a soundtrack into the final export.
+- Add `--duration-from-audio` when you want Pellicule to derive `durationInFrames` from the probed audio length.
+- `pellicule dev` keeps preview audio in sync with play, pause, step, and scrub controls when an audio track is present.
 
 ## How It Works
 

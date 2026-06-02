@@ -18,3 +18,4 @@ export { default as Sequence } from './components/Sequence.vue'
 
 // Animation utilities
 export { interpolate, sequence, Easing } from './utils/math.js'
+export { secondsToFrames, framesToSeconds } from './utils/timing.js'

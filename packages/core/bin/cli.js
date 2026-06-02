@@ -5,6 +5,7 @@ import { resolve, join, extname, basename, dirname } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { renderToMp4 } from '../src/render.js'
+import { probeAudioDuration } from '../src/audio/probe.js'
 import { DefineVideoConfigParseError, extractVideoConfig, resolveVideoConfig } from '../src/macros/define-video-config.js'
 import { detectProject, readPelliculeConfig, resolveInputFile } from '../src/config/detect.js'
 import { startDevServer } from '../src/dev/server.js'
@@ -91,6 +92,7 @@ ${c.bold('OPTIONS')}
   ${c.info('--preset')} <name>         Output preset: ${OUTPUT_PRESET_NAMES.join(', ')} ${c.dim(`(default: ${DEFAULT_OUTPUT_PRESET})`)}
   ${c.info('--quality')} <level>       Output quality: ${OUTPUT_QUALITY_NAMES.join(', ')} ${c.dim(`(default: ${DEFAULT_OUTPUT_QUALITY})`)}
   ${c.info('-d, --duration')} <frames> Duration in frames ${c.dim('(default: from component or 90)')}
+  ${c.info('-A, --duration-from-audio')} Use the audio file length as total duration
   ${c.info('-f, --fps')} <number>      Frames per second ${c.dim('(default: from component or 30)')}
   ${c.info('-w, --width')} <pixels>    Video width ${c.dim('(default: from component or 1920)')}
   ${c.info('-h, --height')} <pixels>   Video height ${c.dim('(default: from component or 1080)')}
@@ -145,6 +147,9 @@ ${c.bold('EXAMPLES')}
 
   ${c.dim('# Render only frames 100-200 (for faster iteration)')}
   ${c.highlight('pellicule')} Video.vue -r 100:200
+
+  ${c.dim('# Let the soundtrack decide the total duration')}
+  ${c.highlight('pellicule')} Karaoke.vue --audio song.mp3 --duration-from-audio
 
   ${c.dim('# Use with Nuxt (auto-detects, connects to localhost:3000)')}
   ${c.highlight('pellicule')} InvoiceDemo
@@ -264,6 +269,7 @@ async function main() {
       preset: { type: 'string' },
       quality: { type: 'string' },
       duration: { type: 'string', short: 'd' },
+      'duration-from-audio': { type: 'boolean', short: 'A' },
       fps: { type: 'string', short: 'f' },
       width: { type: 'string', short: 'w' },
       height: { type: 'string', short: 'h' },
@@ -330,6 +336,9 @@ async function main() {
   if (values.quality && !cliQuality) {
     fail(`Unknown output quality: ${values.quality}`, `Supported qualities: ${OUTPUT_QUALITY_NAMES.join(', ')}`)
   }
+  if (values['duration-from-audio'] && values.duration !== undefined) {
+    fail('Cannot use --duration and --duration-from-audio together', 'Pick one duration source: explicit frames or the probed audio length.')
+  }
 
   // ── Input file resolution ─────────────────────────────────────────
   const input = positionals[0] || 'Video.vue'
@@ -369,6 +378,21 @@ async function main() {
     if (!existsSync(audioPath)) fail(`Audio file not found: ${componentConfig.audio}`)
   }
 
+  const durationFromAudio = values['duration-from-audio'] === true
+  if (durationFromAudio && !audioPath) {
+    fail('Cannot use --duration-from-audio without an audio file', 'Pass --audio <file> or set `audio` in defineVideoConfig().')
+  }
+
+  /** @type {number|null} */
+  let audioDurationInSeconds = null
+  if (durationFromAudio && audioPath) {
+    try {
+      audioDurationInSeconds = await probeAudioDuration(audioPath)
+    } catch (error) {
+      fail(getErrorMessage(error), 'Make sure ffprobe is available and the audio file is valid.')
+    }
+  }
+
   // Build CLI flags object (only include explicitly provided values)
   /** @type {CliVideoConfigFlags} */
   const cliFlags = {}
@@ -378,12 +402,13 @@ async function main() {
   if (values.height !== undefined) cliFlags.height = parseInt(values.height, 10)
 
   // Resolve final config: defaults < componentConfig < cliFlags
-  const resolvedConfig = resolveVideoConfig({ componentConfig, cliFlags })
+  const resolvedConfig = resolveVideoConfig({ componentConfig, cliFlags, audioDurationInSeconds })
 
   const fps = resolvedConfig.fps
   const durationInFrames = resolvedConfig.durationInFrames
   const width = resolvedConfig.width
   const height = resolvedConfig.height
+  const durationSourceNote = durationFromAudio ? 'from audio' : null
   const componentName = basename(inputPath, '.vue')
   let outputBase
   if (values.output) {
@@ -446,7 +471,10 @@ async function main() {
       console.log(`  ${c.bold('Server')}     ${c.info(serverUrl)} ${c.dim('(BYOS)')}`)
     }
     console.log(`  ${c.bold('Resolution')} ${width}x${height}`)
-    console.log(`  ${c.bold('Duration')}   ${durationInFrames} frames @ ${fps}fps ${c.dim(`(${durationSeconds}s)`)}`)
+    console.log(`  ${c.bold('Duration')}   ${durationInFrames} frames @ ${fps}fps ${c.dim(`(${durationSeconds}s${durationSourceNote ? `, ${durationSourceNote}` : ''})`)}`)
+    if (audioPath) {
+      console.log(`  ${c.bold('Audio')}      ${c.info(basename(audioPath))}${audioDurationInSeconds !== null ? c.dim(` (${audioDurationInSeconds.toFixed(2)}s)`) : ''}`)
+    }
     console.log()
 
     // For Nuxt/Quasar, construct /pellicule render page URL
@@ -471,6 +499,8 @@ async function main() {
           values.width === undefined &&
           values.height === undefined
         ),
+        audio: audioPath,
+        audioDurationInSeconds,
         configFile,
         projectType,
         version: VERSION
@@ -513,12 +543,12 @@ async function main() {
   console.log(`  ${c.bold('Preset')}     ${c.info(resolvedOutput.preset)}`)
   console.log(`  ${c.bold('Quality')}    ${c.info(resolvedOutput.quality)}`)
   console.log(`  ${c.bold('Resolution')} ${width}x${height}`)
-  console.log(`  ${c.bold('Duration')}   ${durationInFrames} frames @ ${fps}fps ${c.dim(`(${durationSeconds}s)`)}`)
+  console.log(`  ${c.bold('Duration')}   ${durationInFrames} frames @ ${fps}fps ${c.dim(`(${durationSeconds}s${durationSourceNote ? `, ${durationSourceNote}` : ''})`)}`)
   if (isPartialRender) {
     console.log(`  ${c.bold('Range')}      ${c.highlight(`frames ${startFrame}-${endFrame - 1}`)} ${c.dim(`(${framesToRender} frames, ${partialSeconds}s)`)}`)
   }
   if (audioPath) {
-    console.log(`  ${c.bold('Audio')}      ${c.info(basename(audioPath))}`)
+    console.log(`  ${c.bold('Audio')}      ${c.info(basename(audioPath))}${audioDurationInSeconds !== null ? c.dim(` (${audioDurationInSeconds.toFixed(2)}s)`) : ''}`)
   }
   console.log()
 

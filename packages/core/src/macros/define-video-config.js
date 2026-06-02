@@ -15,6 +15,7 @@
 import { readFileSync } from 'fs'
 import { parse as parseScript } from '@babel/parser'
 import { parse as parseSfc } from '@vue/compiler-sfc'
+import { secondsToFrames } from '../utils/timing.js'
 
 /**
  * @typedef {import('../types.js').CliVideoConfigFlags} CliVideoConfigFlags
@@ -441,32 +442,45 @@ export function extractVideoConfigFromSource(source, options = {}) {
 }
 
 /**
- * Resolve final config: defaults < defineVideoConfig < CLI flags
+ * Resolve final config: defaults < defineVideoConfig < duration-from-audio < CLI flags
  *
- * @param {{ componentConfig?: VideoConfigInput | null, cliFlags?: CliVideoConfigFlags }} options
+ * @param {{
+ *   componentConfig?: VideoConfigInput | null,
+ *   cliFlags?: CliVideoConfigFlags,
+ *   audioDurationInSeconds?: number|null
+ * }} options
  * @returns {VideoConfig}
  */
-export function resolveVideoConfig({ componentConfig, cliFlags }) {
+export function resolveVideoConfig({ componentConfig, cliFlags, audioDurationInSeconds = null }) {
   /** @type {VideoConfig} */
   const defaults = { fps: 30, width: 1920, height: 1080, durationInFrames: 90 }
   /** @type {VideoConfig} */
   const config = { ...defaults }
 
   if (componentConfig) {
-    if (componentConfig.durationInSeconds !== undefined) {
-      const fps = componentConfig.fps || config.fps
-      config.durationInFrames = Math.round(componentConfig.durationInSeconds * fps)
-    }
-    if (componentConfig.durationInFrames !== undefined) config.durationInFrames = componentConfig.durationInFrames
     if (componentConfig.fps !== undefined) config.fps = componentConfig.fps
     if (componentConfig.width !== undefined) config.width = componentConfig.width
     if (componentConfig.height !== undefined) config.height = componentConfig.height
   }
 
-  if (cliFlags.duration !== undefined) config.durationInFrames = cliFlags.duration
   if (cliFlags.fps !== undefined) config.fps = cliFlags.fps
   if (cliFlags.width !== undefined) config.width = cliFlags.width
   if (cliFlags.height !== undefined) config.height = cliFlags.height
+
+  if (componentConfig) {
+    if (componentConfig.durationInSeconds !== undefined) {
+      config.durationInFrames = secondsToFrames(componentConfig.durationInSeconds, config.fps)
+    }
+    if (componentConfig.durationInFrames !== undefined) {
+      config.durationInFrames = componentConfig.durationInFrames
+    }
+  }
+
+  if (audioDurationInSeconds !== null) {
+    config.durationInFrames = secondsToFrames(audioDurationInSeconds, config.fps)
+  }
+
+  if (cliFlags.duration !== undefined) config.durationInFrames = cliFlags.duration
 
   return config
 }

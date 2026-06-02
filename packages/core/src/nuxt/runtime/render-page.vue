@@ -12,6 +12,7 @@
 import { ref, provide, onMounted, nextTick, shallowRef } from 'vue'
 import { resolveVideoComponent, getAvailableVideos } from '#pellicule/video-components'
 import { buildVideoConfigUrl, haveVideoConfigChanged, resolveVideoConfig } from '../../runtime/config.js'
+import { setupPreviewOverlay } from '../../runtime/preview.js'
 import { waitForRenderReady } from '../../runtime/ready.js'
 
 definePageMeta({
@@ -27,6 +28,10 @@ const durationInFrames = parseInt(route.query.duration || '90', 10)
 const width = parseInt(route.query.width || '1920', 10)
 const height = parseInt(route.query.height || '1080', 10)
 const isPreview = route.query.preview === '1'
+const rawAudioDurationInSeconds = route.query['audio-duration']
+const audioDurationInSeconds = rawAudioDurationInSeconds
+  ? Number(rawAudioDurationInSeconds)
+  : null
 const allowPreviewConfigSync = isPreview && route.query['config-refresh'] === '1'
 let pendingReload = false
 
@@ -76,7 +81,12 @@ if (import.meta.client) {
       return
     }
 
-    const nextConfig = resolveVideoConfig(config, componentConfig)
+    const nextConfig = resolveVideoConfig(config, {
+      ...componentConfig,
+      ...(Number.isFinite(audioDurationInSeconds) && audioDurationInSeconds > 0
+        ? { audioDurationInSeconds }
+        : {})
+    })
     if (!haveVideoConfigChanged(config, nextConfig)) {
       return
     }
@@ -92,6 +102,12 @@ onMounted(() => {
     frameRef.value = frame
     await nextTick()
     await waitForRenderReady()
+  }
+
+  if (isPreview) {
+    setupPreviewOverlay({
+      setFrame: window.__PELLICULE_SET_FRAME__
+    })
   }
 
   if (error.value) {

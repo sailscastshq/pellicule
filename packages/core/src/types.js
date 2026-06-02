@@ -20,6 +20,7 @@
  * @property {number} [fps]
  * @property {number} [durationInFrames]
  * @property {number} [durationInSeconds]
+ * @property {number} [audioDurationInSeconds]
  * @property {number} [width]
  * @property {number} [height]
  * @property {string} [audio]
@@ -28,6 +29,7 @@
  * @property {number|string|null} [fps]
  * @property {number|string|null} [durationInFrames]
  * @property {number|string|null} [durationInSeconds]
+ * @property {number|string|null} [audioDurationInSeconds]
  * @property {number|string|null} [width]
  * @property {number|string|null} [height]
  * @property {string|null} [audio]
@@ -138,6 +140,8 @@
  * @property {string|null} [serverUrl]
  * @property {BundlerName} [bundler]
  * @property {boolean} [syncConfigWithComponent]
+ * @property {string|null} [audio]
+ * @property {number|null} [audioDurationInSeconds]
  * @property {string|null} [configFile]
  * @property {ProjectType} [projectType]
  * @property {string} [version]
@@ -145,6 +149,10 @@
  * @typedef {Object} DevServerResult
  * @property {string} url
  * @property {AsyncCleanup} cleanup
+ *
+ * @typedef {Object} PreviewOverlayOptions
+ * @property {string} [version]
+ * @property {(frame: number) => Promise<void>} setFrame
  *
  * @typedef {Object} RenderProgress
  * @property {number} frame

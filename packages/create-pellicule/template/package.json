@@ -6,7 +6,7 @@
     "render": "npx pellicule"
   },
   "dependencies": {
-    "pellicule": "^0.2.0",
+    "pellicule": "^0.3.0",
     "vue": "^3.4.0"
   }
 }

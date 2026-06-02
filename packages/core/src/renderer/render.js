@@ -10,6 +10,14 @@ import { join, dirname } from 'path'
 /** @typedef {import('../types.js').RenderVideoResult} RenderVideoResult */
 
 /**
+ * @typedef {{
+ *   page: import('playwright').Page,
+ *   frame: number,
+ *   outputFrameNum: number
+ * }} RenderFrameContext
+ */
+
+/**
  * Create a video server using the appropriate bundler adapter.
  *
  * @param {BundlerServerOptions} options
@@ -30,12 +38,26 @@ export async function startBundlerServer(options) {
 }
 
 /**
- * Renders a .vue component to video frames.
- *
  * @param {RenderVideoOptions} options
- * @returns {Promise<RenderVideoResult>}
+ * @returns {Promise<{
+ *   page: import('playwright').Page,
+ *   browser: import('playwright').Browser,
+ *   cleanup: () => Promise<void>,
+ *   tempDir: string,
+ *   url: string,
+ *   fps: number,
+ *   width: number,
+ *   height: number,
+ *   durationInFrames: number,
+ *   startFrame: number,
+ *   actualEndFrame: number,
+ *   framesToRender: number,
+ *   onProgress?: ProgressCallback,
+ *   log: (...args: any[]) => void,
+ *   startTime: number
+ * }>}
  */
-export async function renderVideo(options) {
+async function createRenderSession(options) {
   const {
     input,
     fps = 30,
@@ -52,12 +74,9 @@ export async function renderVideo(options) {
     projectType = 'standalone'
   } = options
 
-  // Calculate actual frame range to render
   const actualEndFrame = endFrame !== undefined ? endFrame : durationInFrames
   const framesToRender = actualEndFrame - startFrame
-
   const log = silent ? () => {} : console.log.bind(console)
-
   const startTime = Date.now()
 
   let url
@@ -65,10 +84,8 @@ export async function renderVideo(options) {
   let tempDir
 
   if (serverUrl) {
-    // BYOS mode: skip the bundler entirely, use the provided URL
     log(`Using external server at ${serverUrl}...`)
     url = serverUrl
-    // Create a temp dir for frames and provide cleanup
     const byosTempDir = join(dirname(input), '.pellicule')
     await mkdir(byosTempDir, { recursive: true })
     tempDir = byosTempDir
@@ -76,7 +93,6 @@ export async function renderVideo(options) {
       await rm(byosTempDir, { recursive: true, force: true })
     }
   } else {
-    // Start a bundler dev server
     const bundlerName = bundler === 'rsbuild' ? 'Rsbuild' : 'Vite'
     log(`Starting ${bundlerName} server for ${input}...`)
     const serverStart = Date.now()
@@ -94,11 +110,6 @@ export async function renderVideo(options) {
     log(`Server ready in ${Date.now() - serverStart}ms`)
   }
 
-  // Store frames inside .pellicule (cleaned up automatically after encoding)
-  const framesDir = join(tempDir, 'frames')
-  await mkdir(framesDir, { recursive: true })
-
-  // Launch browser
   const browser = await chromium.launch()
   const context = await browser.newContext({
     viewport: { width, height },
@@ -106,7 +117,6 @@ export async function renderVideo(options) {
   })
   const page = await context.newPage()
 
-  // Capture console errors (only log if not silent)
   page.on('console', msg => {
     if (msg.type() === 'error' && !silent) {
       console.error('Browser error:', msg.text())
@@ -119,67 +129,138 @@ export async function renderVideo(options) {
     }
   })
 
+  return {
+    page,
+    browser,
+    cleanup,
+    tempDir,
+    url,
+    fps,
+    width,
+    height,
+    durationInFrames,
+    startFrame,
+    actualEndFrame,
+    framesToRender,
+    onProgress,
+    log,
+    startTime
+  }
+}
+
+/**
+ * @param {Awaited<ReturnType<typeof createRenderSession>>} session
+ * @param {(context: RenderFrameContext) => Promise<void>} handleFrame
+ * @returns {Promise<void>}
+ */
+async function renderFrameSequence(session, handleFrame) {
+  const {
+    page,
+    url,
+    fps,
+    width,
+    height,
+    durationInFrames,
+    startFrame,
+    actualEndFrame,
+    framesToRender,
+    onProgress,
+    log
+  } = session
+
   const rangeInfo = startFrame > 0 || actualEndFrame < durationInFrames
     ? ` (frames ${startFrame}-${actualEndFrame - 1})`
     : ''
   log(`Rendering ${framesToRender} frames at ${fps}fps (${width}x${height})${rangeInfo}`)
 
-  try {
-    // Load page ONCE with config (durationInFrames stays full for correct animation calculations)
-    // Use & if the URL already has query params (e.g. Nuxt BYOS: /pellicule?component=Demo)
-    const separator = url.includes('?') ? '&' : '?'
-    const pageUrl = `${url}${separator}fps=${fps}&duration=${durationInFrames}&width=${width}&height=${height}`
-    await page.goto(pageUrl, { waitUntil: 'networkidle' })
+  const separator = url.includes('?') ? '&' : '?'
+  const pageUrl = `${url}${separator}fps=${fps}&duration=${durationInFrames}&width=${width}&height=${height}`
+  await page.goto(pageUrl, { waitUntil: 'networkidle' })
+  await page.waitForFunction(() => /** @type {PelliculeWindow} */ (window).__PELLICULE_READY__ === true, { timeout: 10000 })
 
-    // Wait for Vue to mount
-    await page.waitForFunction(() => /** @type {PelliculeWindow} */ (window).__PELLICULE_READY__ === true, { timeout: 10000 })
-
-    // Check for errors
-    const error = await page.evaluate(() => /** @type {PelliculeWindow} */ (window).__PELLICULE_ERROR__)
-    if (error) {
-      throw new Error(`Render error: ${error}`)
-    }
-
-    const renderStart = Date.now()
-
-    // Render each frame in the specified range
-    for (let frame = startFrame; frame < actualEndFrame; frame++) {
-      // Update frame number - Vue reactivity handles re-render
-      await page.evaluate((f) => /** @type {PelliculeWindow} */ (window).__PELLICULE_SET_FRAME__?.(f), frame)
-
-      // Screenshot - output frames are numbered from 0
-      const outputFrameNum = frame - startFrame
-      const framePath = join(framesDir, `frame-${String(outputFrameNum).padStart(5, '0')}.png`)
-      await page.screenshot({ path: framePath })
-
-      // Progress callback
-      if (onProgress) {
-        const elapsed = Date.now() - renderStart
-        const framesRendered = outputFrameNum + 1
-        const currentFps = framesRendered / (elapsed / 1000)
-        onProgress({ frame: outputFrameNum, total: framesToRender, fps: currentFps })
-      }
-
-      // Log progress every 10 frames
-      const outputFrameIndex = frame - startFrame
-      if (outputFrameIndex % 10 === 0 || frame === actualEndFrame - 1) {
-        const percent = Math.round(((outputFrameIndex + 1) / framesToRender) * 100)
-        const elapsed = Date.now() - renderStart
-        const framesPerSec = ((outputFrameIndex + 1) / (elapsed / 1000)).toFixed(1)
-        log(`Frame ${outputFrameIndex + 1}/${framesToRender} (${percent}%) - ${framesPerSec} fps`)
-      }
-    }
-
-    const renderTime = Date.now() - renderStart
-    log(`Rendered ${framesToRender} frames in ${renderTime}ms (${(framesToRender / (renderTime / 1000)).toFixed(1)} fps)`)
-
-  } finally {
-    await browser.close()
-    // Don't cleanup here - frames are needed for encoding
-    // Cleanup will be called by renderToMp4 after encoding
+  const error = await page.evaluate(() => /** @type {PelliculeWindow} */ (window).__PELLICULE_ERROR__)
+  if (error) {
+    throw new Error(`Render error: ${error}`)
   }
 
-  log(`Total time: ${Date.now() - startTime}ms`)
+  const renderStart = Date.now()
 
-  return { framesDir, totalFrames: framesToRender, cleanup }
+  for (let frame = startFrame; frame < actualEndFrame; frame++) {
+    await page.evaluate((f) => /** @type {PelliculeWindow} */ (window).__PELLICULE_SET_FRAME__?.(f), frame)
+
+    const outputFrameNum = frame - startFrame
+    await handleFrame({ page, frame, outputFrameNum })
+
+    if (onProgress) {
+      const elapsed = Date.now() - renderStart
+      const framesRendered = outputFrameNum + 1
+      const currentFps = framesRendered / (elapsed / 1000)
+      onProgress({ frame: outputFrameNum, total: framesToRender, fps: currentFps })
+    }
+
+    if (outputFrameNum % 10 === 0 || frame === actualEndFrame - 1) {
+      const percent = Math.round(((outputFrameNum + 1) / framesToRender) * 100)
+      const elapsed = Date.now() - renderStart
+      const framesPerSec = ((outputFrameNum + 1) / (elapsed / 1000)).toFixed(1)
+      log(`Frame ${outputFrameNum + 1}/${framesToRender} (${percent}%) - ${framesPerSec} fps`)
+    }
+  }
+
+  const renderTime = Date.now() - renderStart
+  log(`Rendered ${framesToRender} frames in ${renderTime}ms (${(framesToRender / (renderTime / 1000)).toFixed(1)} fps)`)
+}
+
+/**
+ * Renders a .vue component to video frames.
+ *
+ * @param {RenderVideoOptions} options
+ * @returns {Promise<RenderVideoResult>}
+ */
+export async function renderVideo(options) {
+  const session = await createRenderSession(options)
+  const framesDir = join(session.tempDir, 'frames')
+  await mkdir(framesDir, { recursive: true })
+
+  try {
+    await renderFrameSequence(session, async ({ page, outputFrameNum }) => {
+      const framePath = join(framesDir, `frame-${String(outputFrameNum).padStart(5, '0')}.png`)
+      await page.screenshot({ path: framePath })
+    })
+  } catch (error) {
+    await session.cleanup()
+    throw error
+  } finally {
+    await session.browser.close()
+  }
+
+  session.log(`Total time: ${Date.now() - session.startTime}ms`)
+
+  return { framesDir, totalFrames: session.framesToRender, cleanup: session.cleanup }
+}
+
+/**
+ * Render a frame sequence and hand each PNG buffer to a caller-provided sink.
+ *
+ * @param {RenderVideoOptions & { onFrame: (png: Buffer, outputFrameNum: number) => Promise<void> }} options
+ * @returns {Promise<{ totalFrames: number, cleanup: () => Promise<void> }>}
+ */
+export async function streamVideoFrames(options) {
+  const { onFrame, ...renderOptions } = options
+  const session = await createRenderSession(renderOptions)
+
+  try {
+    await renderFrameSequence(session, async ({ page, outputFrameNum }) => {
+      const png = await page.screenshot()
+      await onFrame(png, outputFrameNum)
+    })
+  } catch (error) {
+    await session.cleanup()
+    throw error
+  } finally {
+    await session.browser.close()
+  }
+
+  session.log(`Total time: ${Date.now() - session.startTime}ms`)
+
+  return { totalFrames: session.framesToRender, cleanup: session.cleanup }
 }

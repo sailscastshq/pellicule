@@ -18,19 +18,65 @@ import { startBundlerServer } from '../renderer/render.js'
  * @typedef {import('../types.js').AsyncCleanup} AsyncCleanup
  * @typedef {import('../types.js').DevServerOptions} DevServerOptions
  * @typedef {import('../types.js').DevServerResult} DevServerResult
+ * @typedef {(command: string, args: string[], options: { windowsHide: boolean }, callback: (error: Error|null) => void) => { unref?: () => void } | undefined} ExecFileLike
  */
 
 /**
- * Open a URL in the user's default browser using platform-native commands.
- * Uses execFile (not exec) to avoid shell injection.
  * @param {string} url
- * @returns {void}
+ * @param {NodeJS.Platform} [platform=process.platform]
+ * @returns {{ command: string, args: string[] }}
  */
-function openBrowser(url) {
-  const cmd = process.platform === 'darwin' ? 'open'
-    : process.platform === 'win32' ? 'start'
-    : 'xdg-open'
-  execFile(cmd, [url], () => {})
+export function getBrowserOpenCommand(url, platform = process.platform) {
+  if (platform === 'darwin') {
+    return { command: 'open', args: [url] }
+  }
+
+  if (platform === 'win32') {
+    return {
+      command: 'cmd',
+      args: ['/d', '/s', '/c', `start "" "${url.replaceAll('"', '""')}"`]
+    }
+  }
+
+  return { command: 'xdg-open', args: [url] }
+}
+
+/**
+ * Open a URL in the user's default browser using platform-native commands.
+ * Uses execFile (not exec) to avoid shell injection where possible.
+ *
+ * @param {string} url
+ * @param {{
+ *   platform?: NodeJS.Platform,
+ *   execFileRef?: ExecFileLike
+ * }} [options]
+ * @returns {Promise<void>}
+ */
+export function openBrowser(url, options = {}) {
+  const { platform = process.platform, execFileRef = execFile } = options
+  const { command, args } = getBrowserOpenCommand(url, platform)
+
+  return new Promise((resolve, reject) => {
+    const child = execFileRef(
+      command,
+      args,
+      {
+        windowsHide: true
+      },
+      (error) => {
+        if (error) {
+          reject(error)
+          return
+        }
+
+        resolve()
+      }
+    )
+
+    if (typeof child?.unref === 'function') {
+      child.unref()
+    }
+  })
 }
 
 /**
@@ -119,8 +165,13 @@ export async function startDevServer(options) {
     fullUrl.searchParams.set('audio-duration', String(audioDurationInSeconds))
   }
 
-  // Open in the user's default browser
-  openBrowser(fullUrl.toString())
+  try {
+    await openBrowser(fullUrl.toString())
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`\nPellicule could not open your browser automatically: ${message}`)
+    console.warn(`Open this URL manually:\n  ${fullUrl.toString()}\n`)
+  }
 
   /** @type {AsyncCleanup} */
   const cleanup = async () => {

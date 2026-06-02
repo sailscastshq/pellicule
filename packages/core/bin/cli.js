@@ -8,6 +8,13 @@ import { renderToMp4 } from '../src/render.js'
 import { DefineVideoConfigParseError, extractVideoConfig, resolveVideoConfig } from '../src/macros/define-video-config.js'
 import { detectProject, readPelliculeConfig, resolveInputFile } from '../src/config/detect.js'
 import { startDevServer } from '../src/dev/server.js'
+import {
+  DEFAULT_OUTPUT_QUALITY,
+  DEFAULT_OUTPUT_PRESET,
+  OUTPUT_PRESET_NAMES,
+  OUTPUT_QUALITY_NAMES,
+  resolveOutputOptions
+} from '../src/renderer/encode.js'
 
 /**
  * @typedef {import('../src/types.js').BundlerName} BundlerName
@@ -15,6 +22,8 @@ import { startDevServer } from '../src/dev/server.js'
  * @typedef {import('../src/types.js').DetectedProject} DetectedProject
  * @typedef {import('../src/types.js').InputResolutionFailure} InputResolutionFailure
  * @typedef {import('../src/types.js').InputResolutionSuccess} InputResolutionSuccess
+ * @typedef {import('../src/types.js').OutputPresetName} OutputPresetName
+ * @typedef {import('../src/types.js').OutputQuality} OutputQuality
  * @typedef {import('../src/types.js').ProjectType} ProjectType
  * @typedef {import('../src/types.js').RenderProgress} RenderProgress
  * @typedef {import('../src/types.js').VideoConfigLiteral} VideoConfigLiteral
@@ -79,6 +88,8 @@ ${c.bold('USAGE')}
 
 ${c.bold('OPTIONS')}
   ${c.info('-o, --output')} <file>     Output file path ${c.dim('(default: ./output.mp4)')}
+  ${c.info('--preset')} <name>         Output preset: ${OUTPUT_PRESET_NAMES.join(', ')} ${c.dim(`(default: ${DEFAULT_OUTPUT_PRESET})`)}
+  ${c.info('--quality')} <level>       Output quality: ${OUTPUT_QUALITY_NAMES.join(', ')} ${c.dim(`(default: ${DEFAULT_OUTPUT_QUALITY})`)}
   ${c.info('-d, --duration')} <frames> Duration in frames ${c.dim('(default: from component or 90)')}
   ${c.info('-f, --fps')} <number>      Frames per second ${c.dim('(default: from component or 30)')}
   ${c.info('-w, --width')} <pixels>    Video width ${c.dim('(default: from component or 1920)')}
@@ -140,6 +151,12 @@ ${c.bold('EXAMPLES')}
 
   ${c.dim('# Force Rsbuild bundler')}
   ${c.highlight('pellicule')} Video.vue --bundler rsbuild
+
+  ${c.dim('# Render a WebM for the web')}
+  ${c.highlight('pellicule')} Video.vue --preset webm
+
+  ${c.dim('# Pick a higher-quality encode')}
+  ${c.highlight('pellicule')} Video.vue --quality high
 
   ${c.dim('# Live preview with hot-reload (Space to play, arrows to step)')}
   ${c.highlight('pellicule dev')}
@@ -208,6 +225,30 @@ function parseBundlerName(value) {
 }
 
 /**
+ * @param {string | undefined} value
+ * @returns {OutputPresetName | undefined}
+ */
+function parseOutputPreset(value) {
+  if (value && OUTPUT_PRESET_NAMES.some((preset) => preset === value)) {
+    return /** @type {OutputPresetName} */ (value)
+  }
+
+  return undefined
+}
+
+/**
+ * @param {string | undefined} value
+ * @returns {OutputQuality | undefined}
+ */
+function parseOutputQuality(value) {
+  if (value && OUTPUT_QUALITY_NAMES.some((quality) => quality === value)) {
+    return /** @type {OutputQuality} */ (value)
+  }
+
+  return undefined
+}
+
+/**
  * @param {import('../src/config/detect.js').resolveInputFile extends (...args: any[]) => infer R ? R : never} result
  * @returns {result is InputResolutionFailure}
  */
@@ -220,6 +261,8 @@ async function main() {
     allowPositionals: true,
     options: {
       output: { type: 'string', short: 'o' },
+      preset: { type: 'string' },
+      quality: { type: 'string' },
       duration: { type: 'string', short: 'd' },
       fps: { type: 'string', short: 'f' },
       width: { type: 'string', short: 'w' },
@@ -257,6 +300,8 @@ async function main() {
 
   // Resolution: CLI flags > package.json "pellicule" key > auto-detected
   const cliBundler = parseBundlerName(values.bundler)
+  const cliPreset = parseOutputPreset(values.preset)
+  const cliQuality = parseOutputQuality(values.quality)
   const bundler = cliBundler || pkgConfig.bundler || detected.bundler
   const configFile = values.config ? resolve(values.config) : detected.configFile
   const videosDir = values['videos-dir'] ? resolve(values['videos-dir']) : pkgConfig.videosDir || detected.videosDir
@@ -278,6 +323,12 @@ async function main() {
   // Validate bundler flag
   if (values.bundler && !cliBundler) {
     fail(`Unknown bundler: ${values.bundler}`, 'Supported bundlers: vite, rsbuild')
+  }
+  if (values.preset && !cliPreset) {
+    fail(`Unknown output preset: ${values.preset}`, `Supported presets: ${OUTPUT_PRESET_NAMES.join(', ')}`)
+  }
+  if (values.quality && !cliQuality) {
+    fail(`Unknown output quality: ${values.quality}`, `Supported qualities: ${OUTPUT_QUALITY_NAMES.join(', ')}`)
   }
 
   // ── Input file resolution ─────────────────────────────────────────
@@ -333,17 +384,27 @@ async function main() {
   const durationInFrames = resolvedConfig.durationInFrames
   const width = resolvedConfig.width
   const height = resolvedConfig.height
-  let output
+  const componentName = basename(inputPath, '.vue')
+  let outputBase
   if (values.output) {
-    output = values.output
+    outputBase = values.output
   } else if (outDir) {
     // Use component name as filename when outDir is configured
-    const componentName = basename(inputPath, '.vue')
-    output = join(outDir, `${componentName}.mp4`)
+    outputBase = join(outDir, componentName)
   } else {
-    output = './output.mp4'
+    outputBase = './output'
   }
-  const outputPath = resolve(output)
+  let resolvedOutput
+  try {
+    resolvedOutput = resolveOutputOptions({
+      output: outputBase,
+      preset: cliPreset,
+      quality: cliQuality
+    })
+  } catch (error) {
+    fail(getErrorMessage(error))
+  }
+  const outputPath = resolve(resolvedOutput.output)
 
   // Parse optional range (start:end format)
   let startFrame = 0
@@ -449,6 +510,8 @@ async function main() {
   }
 
   console.log(`  ${c.bold('Output')}     ${c.info(basename(outputPath))}`)
+  console.log(`  ${c.bold('Preset')}     ${c.info(resolvedOutput.preset)}`)
+  console.log(`  ${c.bold('Quality')}    ${c.info(resolvedOutput.quality)}`)
   console.log(`  ${c.bold('Resolution')} ${width}x${height}`)
   console.log(`  ${c.bold('Duration')}   ${durationInFrames} frames @ ${fps}fps ${c.dim(`(${durationSeconds}s)`)}`)
   if (isPartialRender) {
@@ -486,6 +549,8 @@ async function main() {
       height,
       output: outputPath,
       audio: audioPath,
+      preset: resolvedOutput.preset,
+      quality: resolvedOutput.quality,
       silent: true,
       serverUrl: finalServerUrl,
       bundler,

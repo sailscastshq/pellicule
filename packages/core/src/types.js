@@ -173,16 +173,24 @@
  * @property {number} totalFrames
  * @property {AsyncCleanup} cleanup
  *
+ * @typedef {'mp4'|'webm'} OutputPresetName
+ *
+ * @typedef {'draft'|'standard'|'high'} OutputQuality
+ *
  * @typedef {Object} EncodeVideoOptions
  * @property {string} framesDir
  * @property {string} [output]
  * @property {number} [fps]
  * @property {string|null} [audio]
+ * @property {OutputPresetName} [preset]
+ * @property {OutputQuality} [quality]
  * @property {boolean} [silent]
  *
  * @typedef {RenderVideoOptions & {
  *   output?: string,
  *   audio?: string|null,
+ *   preset?: OutputPresetName,
+ *   quality?: OutputQuality,
  *   silent?: boolean
  * }} RenderToMp4Options
  *

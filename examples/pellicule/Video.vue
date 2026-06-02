@@ -183,7 +183,7 @@ const features = useSequence(SCENES.FEATURES.start, SCENES.FEATURES.duration)
 const featureItems = [
   { icon: '◆', text: 'Vue 3 + Vite' },
   { icon: '▲', text: 'Frame-perfect' },
-  { icon: '●', text: 'MP4 output' }
+  { icon: '●', text: 'Preset outputs' }
 ]
 
 const featureStyles = computed(() => {
@@ -401,13 +401,11 @@ const finalOpacity = computed(() =>
 </template>
 
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
-
 .video {
   width: 100%;
   height: 100%;
   background: #000;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Avenir Next', 'Segoe UI', 'Helvetica Neue', sans-serif;
   position: relative;
   overflow: hidden;
 }
@@ -503,7 +501,7 @@ const finalOpacity = computed(() =>
 }
 
 .wordmark {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Avenir Next', 'Helvetica Neue', sans-serif;
   font-size: 72px;
   font-weight: 500;
   letter-spacing: -2px;

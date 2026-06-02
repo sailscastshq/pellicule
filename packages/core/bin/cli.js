@@ -5,7 +5,7 @@ import { resolve, join, extname, basename, dirname } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { renderToMp4 } from '../src/render.js'
-import { extractVideoConfig, resolveVideoConfig } from '../src/macros/define-video-config.js'
+import { DefineVideoConfigParseError, extractVideoConfig, resolveVideoConfig } from '../src/macros/define-video-config.js'
 import { detectProject, readPelliculeConfig, resolveInputFile } from '../src/config/detect.js'
 import { startDevServer } from '../src/dev/server.js'
 
@@ -296,7 +296,15 @@ async function main() {
   }
 
   // Extract config from component (if defineVideoConfig is used)
-  const componentConfig = extractVideoConfig(inputPath)
+  let componentConfig
+  try {
+    componentConfig = extractVideoConfig(inputPath)
+  } catch (error) {
+    if (error instanceof DefineVideoConfigParseError) {
+      fail(error.message, 'Keep defineVideoConfig() to one static object literal.')
+    }
+    throw error
+  }
 
   // Resolve audio file path (CLI flag takes precedence over component config)
   /** @type {string | null} */

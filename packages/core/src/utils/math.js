@@ -1,6 +1,13 @@
 /**
+ * @typedef {import('../types.js').EasingFunction} EasingFunction
+ * @typedef {import('../types.js').InterpolationOptions} InterpolationOptions
+ * @typedef {import('../types.js').SequenceStep} SequenceStep
+ */
+
+/**
  * Easing functions for smooth animations
  */
+/** @type {{ linear: EasingFunction, easeIn: EasingFunction, easeOut: EasingFunction, easeInOut: EasingFunction }} */
 export const Easing = {
   linear: (t) => t,
   easeIn: (t) => t * t,
@@ -15,9 +22,7 @@ export const Easing = {
  * @param {number} frame - Current frame number
  * @param {[number, number]} inputRange - [startFrame, endFrame]
  * @param {[number, number]} outputRange - [startValue, endValue]
- * @param {object} options - Optional settings
- * @param {function} options.easing - Easing function (default: linear)
- * @param {'clamp'|'extend'} options.extrapolate - Behavior outside input range
+ * @param {InterpolationOptions} [options] - Optional settings
  * @returns {number} Interpolated value
  *
  * @example
@@ -54,7 +59,7 @@ export function interpolate(frame, inputRange, outputRange, options = {}) {
  * Useful for staggered or chained animations.
  *
  * @param {number} frame - Current frame number
- * @param {Array<{start: number, end: number, from: number, to: number}>} sequence
+ * @param {SequenceStep[]} steps
  * @returns {number} Current value in the sequence
  *
  * @example

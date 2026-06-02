@@ -165,11 +165,11 @@ export function generateOverlayScript({ fps = 30, durationInFrames = 90, version
       <button class="po-btn" id="po-next" title="Next frame (→)">${nextIcon}</button>
     </span>
     <span class="po-info">
-      <span id="po-frame">0</span> / ${durationInFrames - 1}
+      <span id="po-frame">0</span> / <span id="po-total">${durationInFrames - 1}</span>
       &nbsp;·&nbsp;
-      <span id="po-time">0.00s</span> / ${(durationInFrames / fps).toFixed(2)}s
+      <span id="po-time">0.00s</span> / <span id="po-total-time">${(durationInFrames / fps).toFixed(2)}s</span>
       &nbsp;·&nbsp;
-      ${fps}fps
+      <span id="po-fps">${fps}</span>fps
     </span>
     <span class="po-kbd">
       <kbd>Space</kbd> play
@@ -182,8 +182,14 @@ export function generateOverlayScript({ fps = 30, durationInFrames = 90, version
 </div>
 <script>
 (function() {
-  var FPS = ${fps};
-  var TOTAL = ${durationInFrames};
+  function parsePositiveInt(value, fallback) {
+    var parsed = parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  }
+
+  var params = new URLSearchParams(window.location.search);
+  var FPS = parsePositiveInt(params.get('fps'), ${fps});
+  var TOTAL = parsePositiveInt(params.get('duration'), ${durationInFrames});
   var FRAME_MS = 1000 / FPS;
 
   var currentFrame = 0;
@@ -192,10 +198,18 @@ export function generateOverlayScript({ fps = 30, durationInFrames = 90, version
 
   var scrubber = document.getElementById('po-scrubber');
   var frameDisplay = document.getElementById('po-frame');
+  var totalDisplay = document.getElementById('po-total');
   var timeDisplay = document.getElementById('po-time');
+  var totalTimeDisplay = document.getElementById('po-total-time');
+  var fpsDisplay = document.getElementById('po-fps');
   var playBtn = document.getElementById('po-play');
   var prevBtn = document.getElementById('po-prev');
   var nextBtn = document.getElementById('po-next');
+
+  scrubber.max = TOTAL - 1;
+  totalDisplay.textContent = TOTAL - 1;
+  totalTimeDisplay.textContent = (TOTAL / FPS).toFixed(2) + 's';
+  fpsDisplay.textContent = FPS;
 
   // Pre-create the SVG DOM nodes for play/pause toggle (avoids innerHTML)
   var playTemplate = document.createElement('template');

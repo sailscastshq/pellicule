@@ -2,21 +2,18 @@ import { chromium } from 'playwright'
 import { mkdir, rm } from 'fs/promises'
 import { join, dirname } from 'path'
 
+/** @typedef {import('../types.js').PelliculeWindow} PelliculeWindow */
+/** @typedef {import('../types.js').BundlerServerOptions} BundlerServerOptions */
+/** @typedef {import('../types.js').BundlerServerResult} BundlerServerResult */
+/** @typedef {import('../types.js').ProgressCallback} ProgressCallback */
+/** @typedef {import('../types.js').RenderVideoOptions} RenderVideoOptions */
+/** @typedef {import('../types.js').RenderVideoResult} RenderVideoResult */
+
 /**
  * Create a video server using the appropriate bundler adapter.
  *
- * @param {object} options
- * @param {string} options.input - Absolute path to the .vue file
- * @param {number} options.width
- * @param {number} options.height
- * @param {'vite'|'rsbuild'} options.bundler - Which bundler adapter to use
- * @param {string|null} options.configFile - Path to the user's config file
- * @param {string} options.projectType - Detected project type (for Shipwright config reading)
- * @param {boolean} [options.preview] - Whether to inject the dev preview overlay
- * @param {number} [options.fps] - FPS (passed to overlay when preview=true)
- * @param {number} [options.durationInFrames] - Total frames (passed to overlay when preview=true)
- * @param {string} [options.version] - Package version (shown in overlay)
- * @returns {Promise<{ url: string, cleanup: function, tempDir: string }>}
+ * @param {BundlerServerOptions} options
+ * @returns {Promise<BundlerServerResult>}
  */
 export async function startBundlerServer(options) {
   const { bundler = 'vite', ...serverOptions } = options
@@ -35,20 +32,8 @@ export async function startBundlerServer(options) {
 /**
  * Renders a .vue component to video frames.
  *
- * @param {object} options
- * @param {string} options.input - Path to the .vue file
- * @param {number} options.fps - Frames per second (default: 30)
- * @param {number} options.durationInFrames - Total frames in the video (for animation calculations)
- * @param {number} options.startFrame - First frame to render (default: 0)
- * @param {number} options.endFrame - Last frame to render, exclusive (default: durationInFrames)
- * @param {number} options.width - Video width in pixels (default: 1920)
- * @param {number} options.height - Video height in pixels (default: 1080)
- * @param {function} options.onProgress - Progress callback
- * @param {string|null} [options.serverUrl] - BYOS: skip bundler, use this URL instead
- * @param {'vite'|'rsbuild'} [options.bundler] - Which bundler adapter to use (default: 'vite')
- * @param {string|null} [options.configFile] - Path to the user's config file
- * @param {string} [options.projectType] - Detected project type
- * @returns {Promise<{ framesDir: string, totalFrames: number, cleanup: function }>}
+ * @param {RenderVideoOptions} options
+ * @returns {Promise<RenderVideoResult>}
  */
 export async function renderVideo(options) {
   const {
@@ -147,10 +132,10 @@ export async function renderVideo(options) {
     await page.goto(pageUrl, { waitUntil: 'networkidle' })
 
     // Wait for Vue to mount
-    await page.waitForFunction(() => window.__PELLICULE_READY__ === true, { timeout: 10000 })
+    await page.waitForFunction(() => /** @type {PelliculeWindow} */ (window).__PELLICULE_READY__ === true, { timeout: 10000 })
 
     // Check for errors
-    const error = await page.evaluate(() => window.__PELLICULE_ERROR__)
+    const error = await page.evaluate(() => /** @type {PelliculeWindow} */ (window).__PELLICULE_ERROR__)
     if (error) {
       throw new Error(`Render error: ${error}`)
     }
@@ -160,7 +145,7 @@ export async function renderVideo(options) {
     // Render each frame in the specified range
     for (let frame = startFrame; frame < actualEndFrame; frame++) {
       // Update frame number - Vue reactivity handles re-render
-      await page.evaluate((f) => window.__PELLICULE_SET_FRAME__(f), frame)
+      await page.evaluate((f) => /** @type {PelliculeWindow} */ (window).__PELLICULE_SET_FRAME__?.(f), frame)
 
       // Screenshot - output frames are numbered from 0
       const outputFrameNum = frame - startFrame

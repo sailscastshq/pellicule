@@ -14,9 +14,16 @@ import { execFile } from 'node:child_process'
 import { startBundlerServer } from '../renderer/render.js'
 
 /**
+ * @typedef {import('../types.js').AsyncCleanup} AsyncCleanup
+ * @typedef {import('../types.js').DevServerOptions} DevServerOptions
+ * @typedef {import('../types.js').DevServerResult} DevServerResult
+ */
+
+/**
  * Open a URL in the user's default browser using platform-native commands.
  * Uses execFile (not exec) to avoid shell injection.
  * @param {string} url
+ * @returns {void}
  */
 function openBrowser(url) {
   const cmd = process.platform === 'darwin' ? 'open'
@@ -36,10 +43,11 @@ function openBrowser(url) {
  * @param {number} options.height
  * @param {string|null} [options.serverUrl] - BYOS server URL (Nuxt/Quasar)
  * @param {'vite'|'rsbuild'} [options.bundler]
+ * @param {boolean} [options.syncConfigWithComponent]
  * @param {string|null} [options.configFile]
- * @param {string} [options.projectType]
+ * @param {import('../types.js').ProjectType} [options.projectType]
  * @param {string} [options.version] - Package version (shown in overlay)
- * @returns {Promise<void>}
+ * @returns {Promise<DevServerResult>}
  */
 export async function startDevServer(options) {
   const {
@@ -50,12 +58,14 @@ export async function startDevServer(options) {
     height = 1080,
     serverUrl = null,
     bundler = 'vite',
+    syncConfigWithComponent = false,
     configFile = null,
     projectType = 'standalone',
     version = ''
   } = options
 
   let url
+  /** @type {AsyncCleanup} */
   let cleanup
 
   if (serverUrl) {
@@ -82,7 +92,8 @@ export async function startDevServer(options) {
 
   // Build the full URL with config params
   const separator = url.includes('?') ? '&' : '?'
-  const fullUrl = `${url}${separator}fps=${fps}&duration=${durationInFrames}&width=${width}&height=${height}`
+  const configRefresh = syncConfigWithComponent ? '&config-refresh=1' : ''
+  const fullUrl = `${url}${separator}fps=${fps}&duration=${durationInFrames}&width=${width}&height=${height}&preview=1${configRefresh}`
 
   // Open in the user's default browser
   openBrowser(fullUrl)
@@ -93,8 +104,12 @@ export async function startDevServer(options) {
     process.exit(0)
   }
 
-  process.on('SIGINT', shutdown)
-  process.on('SIGTERM', shutdown)
+  process.on('SIGINT', () => {
+    void shutdown()
+  })
+  process.on('SIGTERM', () => {
+    void shutdown()
+  })
 
   return { url: fullUrl, cleanup }
 }

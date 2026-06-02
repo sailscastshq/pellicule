@@ -14,12 +14,30 @@
 
 import { readFileSync } from 'fs'
 
+/**
+ * @typedef {import('../types.js').CliVideoConfigFlags} CliVideoConfigFlags
+ * @typedef {import('../types.js').VideoConfig} VideoConfig
+ * @typedef {import('../types.js').VideoConfigInput} VideoConfigInput
+ * @typedef {import('../types.js').VideoConfigLiteral} VideoConfigLiteral
+ */
+
+const DEFINE_VIDEO_CONFIG_RUNTIME = `((config) => {
+  if (typeof globalThis === 'undefined') return
+  globalThis.__PELLICULE_COMPONENT_CONFIG__ = config
+  if (typeof globalThis.__PELLICULE_ON_CONFIG__ === 'function') {
+    globalThis.__PELLICULE_ON_CONFIG__(config)
+  }
+})`
+
 // ============================================================================
 // Config Extraction (for CLI)
 // ============================================================================
 
 /**
  * Extract video config from a .vue file.
+ *
+ * @param {string} filePath
+ * @returns {VideoConfigLiteral | null}
  */
 export function extractVideoConfig(filePath) {
   const source = readFileSync(filePath, 'utf-8')
@@ -28,6 +46,9 @@ export function extractVideoConfig(filePath) {
 
 /**
  * Extract video config from Vue SFC source code.
+ *
+ * @param {string} source
+ * @returns {VideoConfigLiteral | null}
  */
 export function extractVideoConfigFromSource(source) {
   // Extract <script setup> content with a regex instead of pulling in
@@ -42,13 +63,17 @@ export function extractVideoConfigFromSource(source) {
   try {
     return parseObjectLiteral(match[1])
   } catch (error) {
-    console.warn(`Failed to parse defineVideoConfig: ${error.message}`)
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`Failed to parse defineVideoConfig: ${message}`)
     return null
   }
 }
 
 /**
  * Parse a static object literal string.
+ *
+ * @param {string} str
+ * @returns {VideoConfigLiteral}
  */
 function parseObjectLiteral(str) {
   const trimmed = str.trim()
@@ -56,30 +81,38 @@ function parseObjectLiteral(str) {
     throw new Error('Not an object literal')
   }
 
+  /** @type {Record<string, string | number | boolean | undefined>} */
   const config = {}
   const regex = /(\w+)\s*:\s*(-?\d+(?:\.\d+)?|true|false|'[^']*'|"[^"]*")/g
   let match
 
   while ((match = regex.exec(trimmed)) !== null) {
     const key = match[1]
-    let value = match[2]
+    const rawValue = match[2]
+    /** @type {string | number | boolean} */
+    let value
 
-    if (value === 'true') value = true
-    else if (value === 'false') value = false
-    else if (value.startsWith("'") || value.startsWith('"')) value = value.slice(1, -1)
-    else value = parseFloat(value)
+    if (rawValue === 'true') value = true
+    else if (rawValue === 'false') value = false
+    else if (rawValue.startsWith("'") || rawValue.startsWith('"')) value = rawValue.slice(1, -1)
+    else value = parseFloat(rawValue)
 
     config[key] = value
   }
 
-  return config
+  return /** @type {VideoConfigLiteral} */ (config)
 }
 
 /**
  * Resolve final config: defaults < defineVideoConfig < CLI flags
+ *
+ * @param {{ componentConfig?: VideoConfigInput | null, cliFlags?: CliVideoConfigFlags }} options
+ * @returns {VideoConfig}
  */
 export function resolveVideoConfig({ componentConfig, cliFlags }) {
+  /** @type {VideoConfig} */
   const defaults = { fps: 30, width: 1920, height: 1080, durationInFrames: 90 }
+  /** @type {VideoConfig} */
   const config = { ...defaults }
 
   if (componentConfig) {
@@ -106,10 +139,11 @@ export function resolveVideoConfig({ componentConfig, cliFlags }) {
 // ============================================================================
 
 /**
- * Strip defineVideoConfig() calls and imports from source code.
+ * Remove mistaken defineVideoConfig imports from source code.
  *
- * This is the core transform logic used by both the Vite plugin and
- * the Rsbuild plugin. It's pure string manipulation — no bundler APIs.
+ * The macro call itself is preserved and replaced at compile time via
+ * Vite/Rsbuild `define`, which lets Pellicule observe config changes
+ * during dev HMR without requiring an import.
  *
  * @param {string} code - Source code (typically a .vue file)
  * @returns {string|null} Transformed code, or null if unchanged
@@ -134,12 +168,6 @@ export function stripDefineVideoConfig(code) {
     }
   )
 
-  // Remove the defineVideoConfig() call
-  transformed = transformed.replace(
-    /defineVideoConfig\s*\(\s*\{[\s\S]*?\}\s*\)\s*;?\n?/g,
-    ''
-  )
-
   return transformed !== code ? transformed : null
 }
 
@@ -150,11 +178,21 @@ export function stripDefineVideoConfig(code) {
 /**
  * Vite plugin that strips defineVideoConfig() calls.
  * Runs before Vue's compiler (enforce: 'pre').
+ *
+ * @returns {import('vite').Plugin}
  */
 export function pelliculeMacroVitePlugin() {
   return {
     name: 'pellicule:define-video-config',
     enforce: 'pre',
+
+    config() {
+      return {
+        define: {
+          defineVideoConfig: DEFINE_VIDEO_CONFIG_RUNTIME
+        }
+      }
+    },
 
     transform(code, id) {
       if (!id.endsWith('.vue')) return null
@@ -184,6 +222,8 @@ export function pelliculeMacroVitePlugin() {
  *
  * The api.transform() is kept as a belt-and-suspenders measure —
  * if it manages to strip the call from the raw source, even better.
+ *
+ * @returns {object}
  */
 export function pelliculeMacroRsbuildPlugin() {
   return {
@@ -195,7 +235,7 @@ export function pelliculeMacroRsbuildPlugin() {
       api.modifyRsbuildConfig((config) => {
         config.source = config.source || {}
         config.source.define = config.source.define || {}
-        config.source.define.defineVideoConfig = '(function(){})'
+        config.source.define.defineVideoConfig = DEFINE_VIDEO_CONFIG_RUNTIME
       })
 
       // Also attempt to strip the call from .vue source directly.

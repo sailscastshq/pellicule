@@ -2,14 +2,15 @@ import { spawn } from 'child_process'
 import path from 'path'
 
 /**
+ * @typedef {import('../types.js').EncodeVideoOptions} EncodeVideoOptions
+ * @typedef {import('../types.js').RenderToMp4Options} RenderToMp4Options
+ * @typedef {import('../types.js').RenderVideoOptions} RenderVideoOptions
+ */
+
+/**
  * Encodes PNG frames into an MP4 video using FFmpeg.
  *
- * @param {object} options
- * @param {string} options.framesDir - Directory containing frame-XXXXX.png files
- * @param {string} options.output - Output video path (default: './output.mp4')
- * @param {number} options.fps - Frames per second (default: 30)
- * @param {string|null} options.audio - Audio file path to include (default: null)
- * @param {boolean} options.silent - Suppress console output (default: false)
+ * @param {EncodeVideoOptions} options
  * @returns {Promise<string>} Path to the output video
  */
 export function encodeVideo(options) {
@@ -75,19 +76,15 @@ export function encodeVideo(options) {
 /**
  * Full render pipeline: Vue component → frames → MP4
  *
- * @param {object} options - Same as renderVideo, plus output path
- * @param {string|null} options.audio - Audio file path to include (default: null)
- * @param {boolean} options.silent - Suppress console output (default: false)
- * @param {string|null} [options.serverUrl] - BYOS: skip bundler, use this URL
- * @param {'vite'|'rsbuild'} [options.bundler] - Which bundler adapter to use
- * @param {string|null} [options.configFile] - Path to the user's config file
- * @param {string} [options.projectType] - Detected project type
+ * @param {RenderToMp4Options} options - Same as renderVideo, plus output path
  * @returns {Promise<string>} Path to the output video
  */
 export async function renderToMp4(options) {
   const { renderVideo } = await import('./render.js')
 
-  const { output = './output.mp4', audio = null, silent = false, ...renderOptions } = options
+  const { output = './output.mp4', audio = null, silent = false, ...rawRenderOptions } = options
+  /** @type {RenderVideoOptions} */
+  const renderOptions = rawRenderOptions
 
   // Step 1: Render frames (stored in .pellicule/frames)
   const { framesDir, cleanup } = await renderVideo({ ...renderOptions, silent })

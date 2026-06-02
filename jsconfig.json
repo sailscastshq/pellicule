@@ -1,0 +1,67 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "skipLibCheck": true,
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "pellicule": [
+        "packages/core/src/index.js"
+      ],
+      "pellicule/render": [
+        "packages/core/src/render.js"
+      ],
+      "pellicule/runtime/*": [
+        "packages/core/src/runtime/*"
+      ],
+      "pellicule/nuxt": [
+        "packages/core/src/nuxt/module.js"
+      ],
+      "pellicule/quasar": [
+        "packages/core/src/quasar/index.js"
+      ]
+    }
+  },
+  "include": [
+    "packages/core/bin/**/*.js",
+    "packages/core/src/bundler/**/*.js",
+    "packages/core/src/composables/**/*.js",
+    "packages/core/src/config/**/*.js",
+    "packages/core/src/define-video-config.js",
+    "packages/core/src/dev/overlay.js",
+    "packages/core/src/dev/server.js",
+    "packages/core/src/globals.js",
+    "packages/core/src/index.js",
+    "packages/core/src/macros/**/*.js",
+    "packages/core/src/render.js",
+    "packages/core/src/renderer/**/*.js",
+    "packages/core/src/runtime/**/*.js",
+    "packages/core/src/types.js",
+    "packages/core/src/utils/**/*.js",
+    "packages/core/test/**/*.js",
+    "examples/**/*.js",
+    "examples/**/*.vue"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/.pellicule",
+    "packages/core/src/nuxt/**",
+    "packages/core/src/quasar/**",
+    "packages/create-pellicule/**"
+  ]
+}

@@ -10,6 +10,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const pelliculeSrc = resolve(__dirname, '..')
 
 /**
+ * @typedef {import('net').AddressInfo} AddressInfo
+ * @typedef {import('vite').InlineConfig} InlineConfig
+ * @typedef {import('vite').PluginOption} VitePluginOption
+ * @typedef {import('../types.js').BundlerServerResult} BundlerServerResult
+ * @typedef {import('../types.js').BundlerServerOptions} BundlerServerOptions
+ */
+
+/**
  * Creates a Vite dev server for rendering a video component.
  *
  * When a configFile is provided, Pellicule loads the user's existing
@@ -17,16 +25,8 @@ const pelliculeSrc = resolve(__dirname, '..')
  * This means aliases, plugins, and settings from the user's project
  * are automatically available inside video components.
  *
- * @param {object} options
- * @param {string} options.input - Absolute path to the .vue file
- * @param {number} options.width - Video width
- * @param {number} options.height - Video height
- * @param {string|null} [options.configFile] - Path to the user's vite.config.js (auto-detected or explicit)
- * @param {boolean} [options.preview] - Whether to inject the dev preview overlay
- * @param {number} [options.fps] - FPS (passed to overlay when preview=true)
- * @param {number} [options.durationInFrames] - Total frames (passed to overlay when preview=true)
- * @param {string} [options.version] - Package version (shown in overlay)
- * @returns {Promise<{ server: object, url: string, cleanup: function, tempDir: string }>}
+ * @param {BundlerServerOptions} options
+ * @returns {Promise<BundlerServerResult>}
  */
 export async function createVideoServer(options) {
   const { input, width = 1920, height = 1080, configFile = null, preview = false, fps = 30, durationInFrames = 90, version = '' } = options
@@ -49,6 +49,7 @@ export async function createVideoServer(options) {
   // would resolve 'vue' from their own node_modules — different instance
   // than the project's Vue, which breaks provide/inject silently.
   const projectRequire = createRequire(resolve(process.cwd(), 'package.json'))
+  /** @type {string | undefined} */
   let vueAlias
   try {
     vueAlias = projectRequire.resolve('vue')
@@ -56,6 +57,7 @@ export async function createVideoServer(options) {
     // If vue can't be resolved from project, let Vite handle it naturally
   }
 
+  /** @type {Record<string, string>} */
   const aliases = {
     'pellicule': pelliculeSrc
   }
@@ -65,9 +67,11 @@ export async function createVideoServer(options) {
   // plugins. Adding ours too causes a duplicate plugin conflict — the second
   // vue() sees already-transformed output and fails. So we only add vue()
   // when there's no user config (standalone pellicule rendering).
+  /** @type {InlineConfig} */
   let finalConfig
 
   if (configFile) {
+    /** @type {Awaited<ReturnType<typeof loadConfigFromFile>> | null} */
     let loaded = null
     try {
       loaded = await loadConfigFromFile(
@@ -79,9 +83,10 @@ export async function createVideoServer(options) {
       // Fall through to the fallback path below.
     }
 
+    /** @type {InlineConfig} */
     const pelliculeConfig = {
       root: tempDir,
-      plugins: [pelliculeMacroVitePlugin()],
+      plugins: /** @type {VitePluginOption[]} */ ([pelliculeMacroVitePlugin()]),
       server: { port: 0, strictPort: false },
       resolve: { alias: aliases },
       logLevel: 'warn'
@@ -94,18 +99,29 @@ export async function createVideoServer(options) {
       // the Laravel project root.
       if (loaded.config.plugins) {
         const conflicting = new Set(['laravel', 'vite-plugin-full-reload'])
-        loaded.config.plugins = loaded.config.plugins
+        const loadedPlugins = /** @type {any[]} */ (loaded.config.plugins)
+        loaded.config.plugins = /** @type {VitePluginOption[]} */ (loadedPlugins
           .flat(Infinity)
-          .filter(p => !(p && typeof p === 'object' && conflicting.has(p.name)))
+          .filter((plugin) => !(
+            plugin &&
+            typeof plugin === 'object' &&
+            'name' in plugin &&
+            typeof plugin.name === 'string' &&
+            conflicting.has(plugin.name)
+          )))
       }
-      finalConfig = mergeConfig(loaded.config, pelliculeConfig)
+      finalConfig = /** @type {InlineConfig} */ (mergeConfig(loaded.config, pelliculeConfig))
     } else {
       // Config file existed but failed to load — add vue() as fallback
-      pelliculeConfig.plugins.push(vue())
+      pelliculeConfig.plugins = [
+        ...(pelliculeConfig.plugins || []),
+        vue()
+      ]
       finalConfig = pelliculeConfig
     }
   } else {
     // No user config — pellicule provides everything including vue()
+    /** @type {InlineConfig} */
     finalConfig = {
       root: tempDir,
       plugins: [pelliculeMacroVitePlugin(), vue()],
@@ -118,7 +134,11 @@ export async function createVideoServer(options) {
   const server = await createServer(finalConfig)
   await server.listen()
 
-  const address = server.httpServer.address()
+  const address = server.httpServer?.address()
+  if (!address || typeof address === 'string') {
+    throw new Error('Vite server did not expose a numeric port')
+  }
+
   const url = `http://localhost:${address.port}`
 
   const cleanup = async () => {

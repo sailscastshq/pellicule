@@ -9,8 +9,20 @@ import { extractVideoConfig, resolveVideoConfig } from '../src/macros/define-vid
 import { detectProject, readPelliculeConfig, resolveInputFile } from '../src/config/detect.js'
 import { startDevServer } from '../src/dev/server.js'
 
+/**
+ * @typedef {import('../src/types.js').BundlerName} BundlerName
+ * @typedef {import('../src/types.js').CliVideoConfigFlags} CliVideoConfigFlags
+ * @typedef {import('../src/types.js').DetectedProject} DetectedProject
+ * @typedef {import('../src/types.js').InputResolutionFailure} InputResolutionFailure
+ * @typedef {import('../src/types.js').InputResolutionSuccess} InputResolutionSuccess
+ * @typedef {import('../src/types.js').ProjectType} ProjectType
+ * @typedef {import('../src/types.js').RenderProgress} RenderProgress
+ * @typedef {import('../src/types.js').VideoConfigLiteral} VideoConfigLiteral
+ */
+
 // Read version from package.json
 const __dirname = dirname(fileURLToPath(import.meta.url))
+/** @type {{ version: string }} */
 const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8'))
 const VERSION = pkg.version
 
@@ -28,15 +40,27 @@ const colors = {
 }
 
 const c = {
+  /** @param {string} s */
   error: (s) => `${colors.red}${s}${colors.reset}`,
+  /** @param {string} s */
   warn: (s) => `${colors.yellow}${s}${colors.reset}`,
+  /** @param {string} s */
   info: (s) => `${colors.cyan}${s}${colors.reset}`,
+  /** @param {string} s */
   dim: (s) => `${colors.dim}${s}${colors.reset}`,
+  /** @param {string} s */
   bold: (s) => `${colors.bold}${s}${colors.reset}`,
+  /** @param {string} s */
   highlight: (s) => `${colors.pellicule}${s}${colors.reset}`,
+  /** @param {string} s */
   brand: (s) => `${colors.bgPellicule}${colors.white}${colors.bold}${s}${colors.reset}`
 }
 
+/**
+ * @param {string} msg
+ * @param {string} [hint]
+ * @returns {never}
+ */
 function fail(msg, hint) {
   console.error(c.error(`\nError: ${msg}\n`))
   if (hint) console.error(c.dim(`  ${hint}\n`))
@@ -138,12 +162,22 @@ function printBanner() {
   console.log()
 }
 
+/**
+ * @param {number} ms
+ * @returns {string}
+ */
 function formatTime(ms) {
   if (ms < 1000) return `${ms}ms`
   const seconds = (ms / 1000).toFixed(1)
   return `${seconds}s`
 }
 
+/**
+ * @param {number} frame
+ * @param {number} total
+ * @param {number} fps
+ * @returns {string}
+ */
 function formatProgress(frame, total, fps) {
   const percent = Math.round(((frame + 1) / total) * 100)
   const barWidth = 30
@@ -151,6 +185,34 @@ function formatProgress(frame, total, fps) {
   const empty = barWidth - filled
   const bar = c.highlight('█'.repeat(filled)) + c.dim('░'.repeat(empty))
   return `  ${bar} ${c.bold(percent + '%')} ${c.dim(`(${frame + 1}/${total} @ ${fps.toFixed(1)} fps)`)}`
+}
+
+/**
+ * @param {unknown} error
+ * @returns {string}
+ */
+function getErrorMessage(error) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * @param {string | undefined} value
+ * @returns {BundlerName | undefined}
+ */
+function parseBundlerName(value) {
+  if (value === 'vite' || value === 'rsbuild') {
+    return value
+  }
+
+  return undefined
+}
+
+/**
+ * @param {import('../src/config/detect.js').resolveInputFile extends (...args: any[]) => infer R ? R : never} result
+ * @returns {result is InputResolutionFailure}
+ */
+function isInputResolutionFailure(result) {
+  return 'error' in result
 }
 
 async function main() {
@@ -194,24 +256,27 @@ async function main() {
   const pkgConfig = readPelliculeConfig()
 
   // Resolution: CLI flags > package.json "pellicule" key > auto-detected
-  const bundler = values.bundler || pkgConfig.bundler || detected.bundler
+  const cliBundler = parseBundlerName(values.bundler)
+  const bundler = cliBundler || pkgConfig.bundler || detected.bundler
   const configFile = values.config ? resolve(values.config) : detected.configFile
   const videosDir = values['videos-dir'] ? resolve(values['videos-dir']) : pkgConfig.videosDir || detected.videosDir
   const outDir = values['out-dir'] ? resolve(values['out-dir']) : pkgConfig.outDir || null
   const serverUrl = values['server-url'] || pkgConfig.serverUrl || detected.defaultServerUrl || null
   const projectType = detected.projectType
 
+  /** @type {Partial<Record<ProjectType, string>>} */
   const projectLabels = {
     laravel: 'Laravel',
     vite: 'Vite',
     rsbuild: 'Rsbuild',
     shipwright: 'Boring Stack (Shipwright)',
     nuxt: 'Nuxt',
-    quasar: 'Quasar'
+    quasar: 'Quasar',
+    standalone: 'Standalone'
   }
 
   // Validate bundler flag
-  if (values.bundler && !['vite', 'rsbuild'].includes(values.bundler)) {
+  if (values.bundler && !cliBundler) {
     fail(`Unknown bundler: ${values.bundler}`, 'Supported bundlers: vite, rsbuild')
   }
 
@@ -219,8 +284,8 @@ async function main() {
   const input = positionals[0] || 'Video.vue'
   const result = resolveInputFile(input, videosDir)
 
-  if (result.error) {
-    const searchedPaths = result.searched.map(p => `  - ${p}`).join('\n')
+  if (isInputResolutionFailure(result)) {
+    const searchedPaths = result.searched.map((searchedPath) => `  - ${searchedPath}`).join('\n')
     fail(result.error, `Looked in:\n${searchedPaths}`)
   }
 
@@ -234,6 +299,7 @@ async function main() {
   const componentConfig = extractVideoConfig(inputPath)
 
   // Resolve audio file path (CLI flag takes precedence over component config)
+  /** @type {string | null} */
   let audioPath = null
   if (values.audio) {
     audioPath = resolve(values.audio)
@@ -245,6 +311,7 @@ async function main() {
   }
 
   // Build CLI flags object (only include explicitly provided values)
+  /** @type {CliVideoConfigFlags} */
   const cliFlags = {}
   if (values.duration !== undefined) cliFlags.duration = parseInt(values.duration, 10)
   if (values.fps !== undefined) cliFlags.fps = parseInt(values.fps, 10)
@@ -329,6 +396,12 @@ async function main() {
         height,
         serverUrl: devServerUrl,
         bundler,
+        syncConfigWithComponent: (
+          values.duration === undefined &&
+          values.fps === undefined &&
+          values.width === undefined &&
+          values.height === undefined
+        ),
         configFile,
         projectType,
         version: VERSION
@@ -343,7 +416,7 @@ async function main() {
       // Keep process alive
       await new Promise(() => {})
     } catch (error) {
-      console.error(c.error(`  Error: ${error.message}`))
+      console.error(c.error(`  Error: ${getErrorMessage(error)}`))
       process.exit(1)
     }
   }
@@ -429,16 +502,17 @@ async function main() {
     // Clear progress line on error
     process.stdout.write(clearLine + cursorToStart)
     console.error()
-    console.error(c.error(`  Error: ${error.message}`))
+    const message = getErrorMessage(error)
+    console.error(c.error(`  Error: ${message}`))
     console.error()
 
-    if (error.message.includes('ffmpeg')) {
+    if (message.includes('ffmpeg')) {
       console.error(c.warn('  Hint: Make sure FFmpeg is installed and available in your PATH'))
       console.error(c.dim('  Install: https://ffmpeg.org/download.html'))
       console.error()
     }
 
-    if (error.message.includes('Rsbuild')) {
+    if (message.includes('Rsbuild')) {
       console.error(c.warn('  Hint: Install @rsbuild/core and @rsbuild/plugin-vue'))
       console.error(c.dim('  npm install -D @rsbuild/core @rsbuild/plugin-vue'))
       console.error()
@@ -449,6 +523,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(c.error(`\nUnexpected error: ${error.message}\n`))
+  console.error(c.error(`\nUnexpected error: ${getErrorMessage(error)}\n`))
   process.exit(1)
 })

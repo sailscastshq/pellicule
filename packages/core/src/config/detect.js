@@ -15,15 +15,9 @@ import { existsSync, readFileSync } from 'fs'
 import { join, resolve } from 'path'
 
 /**
- * @typedef {'laravel'|'vite'|'rsbuild'|'shipwright'|'nuxt'|'quasar'|'standalone'} ProjectType
- *
- * @typedef {Object} DetectedProject
- * @property {ProjectType} projectType
- * @property {'vite'|'rsbuild'} bundler - Which bundler adapter to use
- * @property {string|null} configFile - Absolute path to the detected config file
- * @property {string} videosDir - Absolute path to the conventional videos directory
- * @property {boolean} byos - Whether this project requires BYOS (Bring Your Own Server)
- * @property {string|null} defaultServerUrl - Default server URL for BYOS projects (e.g., Nuxt)
+ * @typedef {import('../types.js').DetectedProject} DetectedProject
+ * @typedef {import('../types.js').PelliculeProjectConfig} PelliculeProjectConfig
+ * @typedef {import('../types.js').InputResolutionResult} InputResolutionResult
  */
 
 /**
@@ -155,7 +149,7 @@ export function detectProject(cwd) {
  *   - bundler    — force 'vite' or 'rsbuild'
  *
  * @param {string} [cwd] - Directory to scan (defaults to process.cwd())
- * @returns {{ serverUrl?: string, videosDir?: string, outDir?: string, bundler?: string }}
+ * @returns {PelliculeProjectConfig}
  */
 export function readPelliculeConfig(cwd) {
   const root = resolve(cwd || process.cwd())
@@ -169,11 +163,14 @@ export function readPelliculeConfig(cwd) {
 
     if (!config || typeof config !== 'object') return {}
 
+    /** @type {PelliculeProjectConfig} */
     const result = {}
     if (typeof config.serverUrl === 'string') result.serverUrl = config.serverUrl
     if (typeof config.videosDir === 'string') result.videosDir = resolve(root, config.videosDir)
     if (typeof config.outDir === 'string') result.outDir = resolve(root, config.outDir)
-    if (typeof config.bundler === 'string') result.bundler = config.bundler
+    if (config.bundler === 'vite' || config.bundler === 'rsbuild') {
+      result.bundler = config.bundler
+    }
 
     return result
   } catch {
@@ -192,7 +189,7 @@ export function readPelliculeConfig(cwd) {
  *
  * @param {string} input - User-provided input (e.g., "InvoiceDemo" or "InvoiceDemo.vue")
  * @param {string} videosDir - Conventional videos directory for this project type
- * @returns {{ resolved: string } | { error: string, searched: string[] }}
+ * @returns {InputResolutionResult}
  */
 export function resolveInputFile(input, videosDir) {
   const candidates = []

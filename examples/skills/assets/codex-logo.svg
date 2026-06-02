@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title>Codex</title>
+  <defs>
+    <linearGradient id="codexGradient" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#b3a8ff" />
+      <stop offset="55%" stop-color="#7f95f4" />
+      <stop offset="100%" stop-color="#4850f3" />
+    </linearGradient>
+  </defs>
+  <g fill="url(#codexGradient)">
+    <circle cx="165" cy="256" r="118" />
+    <circle cx="250" cy="164" r="112" />
+    <circle cx="337" cy="198" r="102" />
+    <circle cx="383" cy="280" r="117" />
+    <circle cx="286" cy="359" r="123" />
+    <circle cx="194" cy="340" r="112" />
+  </g>
+  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M182 221 L231 298 L182 379" stroke-width="28" />
+    <path d="M272 379 H362" stroke-width="24" />
+  </g>
+</svg>

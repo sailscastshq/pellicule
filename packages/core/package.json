@@ -10,6 +10,8 @@
   "exports": {
     ".": "./src/index.js",
     "./render": "./src/render.js",
+    "./runtime/config": "./src/runtime/config.js",
+    "./runtime/ready": "./src/runtime/ready.js",
     "./nuxt": "./src/nuxt/module.js",
     "./quasar": "./src/quasar/index.js"
   },

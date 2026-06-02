@@ -18,6 +18,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const pelliculeSrc = resolve(__dirname, '..')
 
 /**
+ * @typedef {import('../types.js').BundlerServerResult} BundlerServerResult
+ * @typedef {import('../types.js').BundlerServerOptions} BundlerServerOptions
+ */
+
+/**
  * Load the user's Rsbuild config from a config file.
  *
  * For Shipwright configs, reads config/shipwright.js and
@@ -36,6 +41,7 @@ async function loadUserConfig(configFile, projectType) {
   }
 
   // Standalone rsbuild.config.js — use Rsbuild's own config loader
+  // @ts-expect-error Rsbuild is an optional peer dependency and may not be installed in this workspace.
   const { loadConfig } = await import('@rsbuild/core')
   const { content } = await loadConfig({ cwd: dirname(configFile) })
   return content || {}
@@ -44,17 +50,8 @@ async function loadUserConfig(configFile, projectType) {
 /**
  * Creates an Rsbuild dev server for rendering a video component.
  *
- * @param {object} options
- * @param {string} options.input - Absolute path to the .vue file
- * @param {number} options.width - Video width
- * @param {number} options.height - Video height
- * @param {string|null} [options.configFile] - Path to the user's config file
- * @param {'rsbuild'|'shipwright'} [options.projectType] - Which config format to read
- * @param {boolean} [options.preview] - Whether to inject the dev preview overlay
- * @param {number} [options.fps] - FPS (passed to overlay when preview=true)
- * @param {number} [options.durationInFrames] - Total frames (passed to overlay when preview=true)
- * @param {string} [options.version] - Package version (shown in overlay)
- * @returns {Promise<{ server: object, url: string, cleanup: function, tempDir: string }>}
+ * @param {BundlerServerOptions} options
+ * @returns {Promise<BundlerServerResult>}
  */
 export async function createVideoServer(options) {
   const {
@@ -74,7 +71,10 @@ export async function createVideoServer(options) {
   // resolves relative to the file's physical location, not the project root.
   const projectRequire = createRequire(resolve(process.cwd(), 'package.json'))
 
-  let createRsbuild, mergeRsbuildConfig
+  /** @type {((options: { rsbuildConfig: object }) => Promise<any>) | undefined} */
+  let createRsbuild
+  /** @type {((base: object, extra: object) => object) | undefined} */
+  let mergeRsbuildConfig
   try {
     const rsbuildCorePath = projectRequire.resolve('@rsbuild/core')
     const rsbuildCore = await import(rsbuildCorePath)
@@ -102,6 +102,7 @@ export async function createVideoServer(options) {
   })
 
   // Load @rsbuild/plugin-vue (also resolved from user's project)
+  /** @type {(() => any) | undefined} */
   let pluginVue
   try {
     const pluginVuePath = projectRequire.resolve('@rsbuild/plugin-vue')
@@ -114,6 +115,10 @@ export async function createVideoServer(options) {
     )
   }
 
+  if (!createRsbuild || !pluginVue) {
+    throw new Error('Rsbuild helpers were not loaded correctly')
+  }
+
   // Build resolve.alias — always alias 'pellicule' to the local source.
   // Also alias 'vue' to the project's Vue to avoid duplicate Vue runtimes.
   // Without this, pellicule's source files (physically located in the pellicule
@@ -122,6 +127,7 @@ export async function createVideoServer(options) {
   // Vue instances means provide/inject breaks silently.
   // For Shipwright projects, also add the conventional ~ and @ aliases
   // that sails-hook-shipwright normally injects at runtime.
+  /** @type {Record<string, string>} */
   const aliases = {
     'pellicule': pelliculeSrc,
     'vue': projectRequire.resolve('vue')
@@ -163,13 +169,17 @@ export async function createVideoServer(options) {
 
   let finalConfig = pelliculeConfig
 
+  const rsbuildProjectType = projectType === 'shipwright' ? 'shipwright' : 'rsbuild'
+
   // If the user has a config file, load and merge it
   if (configFile) {
-    const userConfig = await loadUserConfig(configFile, projectType)
+    const userConfig = await loadUserConfig(configFile, rsbuildProjectType)
 
     if (userConfig && Object.keys(userConfig).length > 0) {
       // User config is the base, Pellicule config merges on top
-      finalConfig = mergeRsbuildConfig(userConfig, pelliculeConfig)
+      finalConfig = mergeRsbuildConfig
+        ? mergeRsbuildConfig(userConfig, pelliculeConfig)
+        : pelliculeConfig
     }
   }
 

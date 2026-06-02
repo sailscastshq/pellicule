@@ -1,6 +1,6 @@
 <script setup>
 defineVideoConfig({
-  durationInSeconds: 8
+  durationInSeconds: 10
 })
 
 import { computed } from 'vue'
@@ -10,13 +10,13 @@ const frame = useFrame()
 const { fps } = useVideoConfig()
 
 // =============================================================================
-// SCENE TIMING (8 seconds = 240 frames at 30fps)
+// SCENE TIMING (10 seconds = 300 frames at 30fps)
 // =============================================================================
 const SCENE = {
   terminal: { start: 0, end: fps * 5 },           // 0-5s: Terminal typing + SKILLS banner
   announce: { start: fps * 5, end: fps * 6.5 },   // 5-6.5s: Announcement
-  logos: { start: fps * 6.5, end: fps * 7.5 },    // 6.5-7.5s: Logos
-  final: { start: fps * 7.5, end: fps * 8 }       // 7.5-8s: Final logo mark
+  logos: { start: fps * 6.5, end: fps * 9.1 },    // 6.5-9.1s: Claude hold, Codex push, Codex hold
+  final: { start: fps * 9.1, end: fps * 10 }      // 9.1-10s: Final logo mark
 }
 
 const currentScene = computed(() => {
@@ -38,7 +38,7 @@ const orb2Y = computed(() => Math.sin(frame.value * 0.022) * 100)
 // =============================================================================
 // SCENE 1: TERMINAL - Fast typing, then ASCII banner
 // =============================================================================
-const command = 'npx skills add sailscastshq/pellicule-skills'
+const command = 'npx skills add sailscastshq/pellicule/skills'
 
 // FAST typing - 1 char per frame, starts at frame 15
 const typingStart = fps * 0.5
@@ -121,15 +121,34 @@ const logosScale = computed(() =>
 )
 
 const pelliculeX = computed(() =>
-  interpolate(frame.value, [SCENE.logos.start, SCENE.logos.start + fps * 0.35], [-150, 0], { easing: Easing.easeOut })
+  interpolate(frame.value, [SCENE.logos.start, SCENE.logos.start + fps * 0.35], [-220, 0], { easing: Easing.easeOut })
 )
 
-const claudeX = computed(() =>
-  interpolate(frame.value, [SCENE.logos.start, SCENE.logos.start + fps * 0.35], [150, 0], { easing: Easing.easeOut })
+const partnerLogoX = computed(() =>
+  interpolate(frame.value, [SCENE.logos.start, SCENE.logos.start + fps * 0.35], [220, 0], { easing: Easing.easeOut })
+)
+
+const handoffStart = SCENE.logos.start + fps * 0.75
+const handoffEnd = SCENE.logos.start + fps * 1.2
+
+const codexY = computed(() =>
+  interpolate(frame.value, [handoffStart, handoffEnd], [-320, 0], { easing: Easing.easeInOut })
+)
+
+const codexScale = computed(() =>
+  interpolate(frame.value, [handoffStart, handoffEnd], [0.96, 1], { easing: Easing.easeOut })
+)
+
+const claudeY = computed(() =>
+  interpolate(frame.value, [handoffStart, handoffEnd], [0, 320], { easing: Easing.easeInOut })
+)
+
+const claudeScale = computed(() =>
+  interpolate(frame.value, [handoffStart, handoffEnd], [1, 0.98], { easing: Easing.easeInOut })
 )
 
 const logosFadeOut = computed(() =>
-  interpolate(frame.value, [SCENE.logos.end - fps * 0.15, SCENE.logos.end], [1, 0])
+  interpolate(frame.value, [SCENE.logos.end - fps * 0.2, SCENE.logos.end], [1, 0])
 )
 
 // Plus sign rotation
@@ -238,7 +257,7 @@ const skillsBanner = `███████╗██╗  ██╗██╗█�
             </div>
             <div class="output-line">
               <span class="diamond">◇</span>
-              <span>Source: <span class="url">github.com/sailscastshq/pellicule-skills</span></span>
+              <span>Source: <span class="url">github.com/sailscastshq/pellicule/tree/main/skills</span></span>
             </div>
             <div class="output-line highlight">
               <span class="bullet">●</span>
@@ -266,7 +285,7 @@ const skillsBanner = `███████╗██╗  ██╗██╗█�
       <h1 :style="{ textShadow: `0 0 ${80 * glowPulse}px rgba(66, 184, 131, ${glowPulse})` }">
         Pellicule Skills
       </h1>
-      <p>now available for Claude Code</p>
+      <p>now available for Claude Code and Codex</p>
     </div>
 
     <!-- ================================================================== -->
@@ -289,14 +308,27 @@ const skillsBanner = `███████╗██╗  ██╗██╗█�
       </div>
 
       <span
-        class="plus"
+        class="logo-connector"
         :style="{ transform: `rotate(${plusRotation}deg)` }"
-      >+</span>
+      >×</span>
 
-      <!-- Claude Code Logo - using image -->
-      <div class="logo-item" :style="{ transform: `translateX(${claudeX}px)` }">
-        <div class="claude-logo">
+      <div class="partner-logo-stack" :style="{ transform: `translateX(${partnerLogoX}px)` }">
+        <div
+          class="logo-item claude-logo"
+          :style="{
+            transform: `translateY(${claudeY}px) scale(${claudeScale})`
+          }"
+        >
           <img src="./assets/claude-code-logo.png" alt="Claude Code" class="logo-img" />
+        </div>
+
+        <div
+          class="logo-item codex-logo"
+          :style="{
+            transform: `translateY(${codexY}px) scale(${codexScale})`
+          }"
+        >
+          <img src="./assets/codex-logo.svg" alt="Codex" class="logo-img codex-img" />
         </div>
       </div>
     </div>
@@ -580,13 +612,14 @@ const skillsBanner = `███████╗██╗  ██╗██╗█�
 .logos-scene {
   display: flex;
   align-items: center;
-  gap: 120px;
+  gap: 72px;
   z-index: 1;
 }
 
 .logo-item {
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 
 .pellicule-logo {
@@ -607,21 +640,43 @@ const skillsBanner = `███████╗██╗  ██╗██╗█�
   background: linear-gradient(180deg, #42b883 0%, #1a3a4a 100%);
 }
 
-.plus {
-  font-size: 100px;
+.logo-connector {
+  font-size: 84px;
   font-weight: 300;
   color: rgba(255, 255, 255, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.partner-logo-stack {
+  position: relative;
+  width: 340px;
+  height: 280px;
+  overflow: hidden;
+}
+
+.partner-logo-stack .logo-item {
+  position: absolute;
+  inset: 0;
 }
 
 .claude-logo {
-  display: flex;
-  align-items: center;
+  z-index: 1;
+}
+
+.codex-logo {
+  z-index: 2;
 }
 
 .logo-img {
   height: 220px;
   width: auto;
   filter: drop-shadow(0 20px 40px rgba(0, 0, 0, 0.4));
+}
+
+.codex-img {
+  height: 250px;
 }
 
 /* ==========================================================================

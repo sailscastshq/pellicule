@@ -6,6 +6,12 @@
   ],
   "scripts": {
     "pellicule": "node packages/core/bin/cli.js",
-    "example:pellicule": "cd examples/pellicule && npm run render"
+    "example:pellicule": "cd examples/pellicule && npm run render",
+    "test": "node --test \"packages/core/test/**/*.test.js\"",
+    "typecheck": "tsc -p jsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^6.0.3"
   }
 }

@@ -88,12 +88,19 @@ function generateRenderPage({ component, fps, duration, width, height }) {
     import { createApp, ref, nextTick, provide, h } from 'vue'
     import { Quasar } from 'quasar'
     import 'quasar/dist/quasar.css'
+    import { buildVideoConfigUrl, haveVideoConfigChanged, parseVideoConfigFromSearch, resolveVideoConfig } from 'pellicule/runtime/config'
+    import { waitForRenderReady } from 'pellicule/runtime/ready'
 
     const componentName = ${safeComponent}
-    const fps = ${parseInt(fps)}
-    const duration = ${parseInt(duration)}
-    const width = ${parseInt(width)}
-    const height = ${parseInt(height)}
+    const params = new URLSearchParams(window.location.search)
+    const isPreview = params.get('preview') === '1'
+    const allowPreviewConfigSync = isPreview && params.get('config-refresh') === '1'
+    const config = parseVideoConfigFromSearch(window.location.search, {
+      fps: ${parseInt(fps)},
+      durationInFrames: ${parseInt(duration)},
+      width: ${parseInt(width)},
+      height: ${parseInt(height)}
+    })
 
     if (!componentName) {
       window.__PELLICULE_ERROR__ = 'Missing ?component= query parameter'
@@ -104,7 +111,22 @@ function generateRenderPage({ component, fps, duration, width, height }) {
         const VideoComponent = mod.default
 
         const frameRef = ref(0)
-        const config = { fps, durationInFrames: duration, width, height }
+        let pendingReload = false
+
+        window.__PELLICULE_COMPONENT_CONFIG__ = null
+        window.__PELLICULE_ON_CONFIG__ = (componentConfig) => {
+          if (!allowPreviewConfigSync || pendingReload) {
+            return
+          }
+
+          const nextConfig = resolveVideoConfig(config, componentConfig)
+          if (!haveVideoConfigChanged(config, nextConfig)) {
+            return
+          }
+
+          pendingReload = true
+          window.location.replace(buildVideoConfigUrl(window.location.href, nextConfig))
+        }
 
         const app = createApp({
           setup() {
@@ -117,11 +139,17 @@ function generateRenderPage({ component, fps, duration, width, height }) {
         app.use(Quasar, {})
         app.mount('#pellicule-app')
 
-        window.__PELLICULE_SET_FRAME__ = async (frame) => {
-          frameRef.value = frame
+        if (!pendingReload) {
+          window.__PELLICULE_SET_FRAME__ = async (frame) => {
+            frameRef.value = frame
+            await nextTick()
+            await waitForRenderReady()
+          }
+
           await nextTick()
+          await waitForRenderReady()
+          window.__PELLICULE_READY__ = true
         }
-        window.__PELLICULE_READY__ = true
       } catch (err) {
         window.__PELLICULE_ERROR__ = err.message
         console.error('Pellicule render error:', err)

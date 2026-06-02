@@ -104,33 +104,51 @@ export function generateHtml({ width = 1920, height = 1080, preview = false, fps
  * @param {string} options.componentPath - Relative path from the temp dir to the .vue file
  * @param {number} options.width
  * @param {number} options.height
+ * @param {boolean} [options.preview] - Whether the entry is used for dev preview
  * @returns {string}
  */
-export function generateEntryJs({ componentPath, width = 1920, height = 1080 }) {
+export function generateEntryJs({ componentPath, width = 1920, height = 1080, preview = false }) {
   return `
 import { createApp, ref, provide, h, nextTick } from 'vue'
 import VideoComponent from '${componentPath}'
+import { buildVideoConfigUrl, haveVideoConfigChanged, parseVideoConfigFromSearch, resolveVideoConfig } from 'pellicule/runtime/config'
+import { waitForRenderReady } from 'pellicule/runtime/ready'
 
 // Pellicule injection keys (must match composables.js)
 const FRAME_KEY = Symbol.for('pellicule-frame')
 const CONFIG_KEY = Symbol.for('pellicule-config')
 
-// Get initial config from URL
 const params = new URLSearchParams(window.location.search)
-const fps = parseInt(params.get('fps') || '30', 10)
-const durationInFrames = parseInt(params.get('duration') || '90', 10)
-const width = parseInt(params.get('width') || '${width}', 10)
-const height = parseInt(params.get('height') || '${height}', 10)
-
-const config = { fps, durationInFrames, width, height }
+const config = parseVideoConfigFromSearch(window.location.search, {
+  width: ${width},
+  height: ${height}
+})
+const allowPreviewConfigSync = ${preview ? 'true' : 'false'} && params.get('config-refresh') === '1'
+let pendingReload = false
 
 // Frame ref - reactive, will trigger re-render when changed
 const frameRef = ref(0)
+
+globalThis.__PELLICULE_COMPONENT_CONFIG__ = null
+globalThis.__PELLICULE_ON_CONFIG__ = (componentConfig) => {
+  if (!allowPreviewConfigSync || pendingReload) {
+    return
+  }
+
+  const nextConfig = resolveVideoConfig(config, componentConfig)
+  if (!haveVideoConfigChanged(config, nextConfig)) {
+    return
+  }
+
+  pendingReload = true
+  window.location.replace(buildVideoConfigUrl(window.location.href, nextConfig))
+}
 
 // Expose setFrame function for the renderer to call
 window.__PELLICULE_SET_FRAME__ = async (frame) => {
   frameRef.value = frame
   await nextTick() // Wait for Vue to re-render
+  await waitForRenderReady()
 }
 
 try {
@@ -144,7 +162,12 @@ try {
   })
 
   app.mount('#app')
-  window.__PELLICULE_READY__ = true
+
+  if (!pendingReload) {
+    await nextTick()
+    await waitForRenderReady()
+    window.__PELLICULE_READY__ = true
+  }
 } catch (error) {
   console.error('Pellicule render error:', error)
   window.__PELLICULE_READY__ = true
@@ -177,7 +200,8 @@ export async function writeTempEntry({ inputPath, width = 1920, height = 1080, p
   const js = generateEntryJs({
     componentPath: `../${inputFile}`,
     width,
-    height
+    height,
+    preview
   })
 
   await writeFile(join(tempDir, 'index.html'), html)

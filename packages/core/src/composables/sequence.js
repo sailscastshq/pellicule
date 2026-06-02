@@ -3,6 +3,11 @@ import { SEQUENCE_KEY } from './keys.js'
 import { useFrame } from './frame.js'
 
 /**
+ * @typedef {import('../types.js').SequenceContext} SequenceContext
+ * @typedef {import('../types.js').SequenceProviderContext} SequenceProviderContext
+ */
+
+/**
  * Get sequence timing information.
  * Can be used in two ways:
  *
@@ -11,7 +16,7 @@ import { useFrame } from './frame.js'
  *
  * @param {number} [from] - Start frame (optional if inside <Sequence>)
  * @param {number} [durationInFrames] - Duration in frames (optional if inside <Sequence>)
- * @returns {{ localFrame: ComputedRef<number>, progress: ComputedRef<number>, isActive: ComputedRef<boolean> }}
+ * @returns {SequenceContext}
  *
  * @example
  * // Inside a <Sequence> component
@@ -43,6 +48,7 @@ export function useSequence(from, durationInFrames) {
   }
 
   // Otherwise, try to get from parent <Sequence>
+  /** @type {SequenceProviderContext | null} */
   const sequenceContext = inject(SEQUENCE_KEY, null)
 
   if (!sequenceContext) {
@@ -60,6 +66,7 @@ export function useSequence(from, durationInFrames) {
  *
  * @param {number} from - Start frame
  * @param {number} durationInFrames - Duration in frames
+ * @returns {SequenceProviderContext}
  */
 export function provideSequence(from, durationInFrames) {
   const globalFrame = useFrame()
@@ -75,6 +82,7 @@ export function provideSequence(from, durationInFrames) {
     globalFrame.value >= from && globalFrame.value < end
   )
 
+  /** @type {SequenceProviderContext} */
   const context = { localFrame, progress, isActive, from, durationInFrames }
   provide(SEQUENCE_KEY, context)
 

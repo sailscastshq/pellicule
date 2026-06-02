@@ -57,10 +57,25 @@ npx pellicule Video.vue -d 90 -o hello.mp4
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-o, --output` | Output file path | `./output.mp4` |
+| `--preset` | Output preset (`mp4`, `webm`) | `mp4` |
+| `--quality` | Output quality (`draft`, `standard`, `high`) | `standard` |
 | `-d, --duration` | Duration in frames | `90` |
 | `-f, --fps` | Frames per second | `30` |
 | `-w, --width` | Video width | `1920` |
 | `-h, --height` | Video height | `1080` |
+
+Example output commands:
+
+```bash
+# Default MP4 (H.264 + AAC)
+npx pellicule Video.vue
+
+# WebM output
+npx pellicule Video.vue --preset webm
+
+# Higher-quality MP4
+npx pellicule Video.vue --quality high
+```
 
 ## API
 
@@ -79,7 +94,7 @@ npx pellicule Video.vue -d 90 -o hello.mp4
 
 1. **Vite** bundles your Vue component
 2. **Playwright** renders each frame in a headless browser
-3. **FFmpeg** encodes the frames into an MP4
+3. **FFmpeg** encodes the frames into the selected output format
 
 The rendering is deterministic - the same component produces the exact same video every time.
 

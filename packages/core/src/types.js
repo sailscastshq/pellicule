@@ -32,7 +32,7 @@
  * @property {number|string|null} [height]
  * @property {string|null} [audio]
  *
- * @typedef {VideoConfigInput & Record<string, string|number|boolean|undefined>} VideoConfigLiteral
+ * @typedef {VideoConfigInput & Record<string, unknown>} VideoConfigLiteral
  *
  * @typedef {Object} CliVideoConfigFlags
  * @property {number} [duration]

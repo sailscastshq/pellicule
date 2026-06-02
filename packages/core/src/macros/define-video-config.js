@@ -13,12 +13,17 @@
  */
 
 import { readFileSync } from 'fs'
+import { parse as parseScript } from '@babel/parser'
+import { parse as parseSfc } from '@vue/compiler-sfc'
 
 /**
  * @typedef {import('../types.js').CliVideoConfigFlags} CliVideoConfigFlags
  * @typedef {import('../types.js').VideoConfig} VideoConfig
  * @typedef {import('../types.js').VideoConfigInput} VideoConfigInput
  * @typedef {import('../types.js').VideoConfigLiteral} VideoConfigLiteral
+ * @typedef {string|number|boolean|null} StaticConfigPrimitive
+ * @typedef {StaticConfigPrimitive | Record<string, unknown> | unknown[]} StaticConfigValue
+ * @typedef {Record<string, unknown>} StaticConfigObject
  */
 
 const DEFINE_VIDEO_CONFIG_RUNTIME = `((config) => {
@@ -33,6 +38,320 @@ const DEFINE_VIDEO_CONFIG_RUNTIME = `((config) => {
 // Config Extraction (for CLI)
 // ============================================================================
 
+export class DefineVideoConfigParseError extends Error {
+  /**
+   * @param {string} message
+   * @param {{ filename?: string, line?: number|null, column?: number|null, hint?: string }} [options]
+   */
+  constructor(message, options = {}) {
+    const { filename, line = null, column = null, hint } = options
+    const location = filename && line !== null && column !== null
+      ? `${filename}:${line}:${column}`
+      : filename || null
+    const suffix = hint ? ` Hint: ${hint}` : ''
+    super(location ? `${location} ${message}${suffix}` : `${message}${suffix}`)
+    this.name = 'DefineVideoConfigParseError'
+  }
+}
+
+/**
+ * @param {string} source
+ * @param {number} offset
+ * @returns {{ line: number, column: number }}
+ */
+function offsetToLineColumn(source, offset) {
+  const safeOffset = Math.max(0, Math.min(offset, source.length))
+  let line = 1
+  let lastLineStart = 0
+
+  for (let index = 0; index < safeOffset; index++) {
+    if (source[index] === '\n') {
+      line += 1
+      lastLineStart = index + 1
+    }
+  }
+
+  return {
+    line,
+    column: safeOffset - lastLineStart + 1
+  }
+}
+
+/**
+ * @param {{ filename: string, source: string, contentStartOffset: number }} context
+ * @param {string} message
+ * @param {{ start?: number|null } | undefined} node
+ * @param {string} [hint]
+ * @returns {DefineVideoConfigParseError}
+ */
+function createParseError(context, message, node, hint) {
+  const relativeOffset = typeof node?.start === 'number' ? node.start : 0
+  const { line, column } = offsetToLineColumn(context.source, context.contentStartOffset + relativeOffset)
+  return new DefineVideoConfigParseError(message, {
+    filename: context.filename,
+    line,
+    column,
+    hint
+  })
+}
+
+/**
+ * @param {string|null|undefined} lang
+ * @returns {import('@babel/parser').ParserPlugin[]}
+ */
+function getScriptParserPlugins(lang) {
+  /** @type {import('@babel/parser').ParserPlugin[]} */
+  const plugins = ['importAttributes']
+
+  if (lang === 'ts' || lang === 'tsx') {
+    plugins.push('typescript')
+  }
+
+  if (lang === 'jsx' || lang === 'tsx') {
+    plugins.push('jsx')
+  }
+
+  return plugins
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, any>}
+ */
+function isAstNode(value) {
+  return !!value && typeof value === 'object' && typeof /** @type {{ type?: unknown }} */ (value).type === 'string'
+}
+
+/**
+ * @param {unknown} expression
+ * @returns {expression is Record<string, any>}
+ */
+function isDefineVideoConfigCall(expression) {
+  return isAstNode(expression)
+    && expression.type === 'CallExpression'
+    && isAstNode(expression.callee)
+    && expression.callee.type === 'Identifier'
+    && expression.callee.name === 'defineVideoConfig'
+    && Array.isArray(expression.arguments)
+}
+
+/**
+ * @param {unknown} expression
+ * @returns {Record<string, any> | null}
+ */
+function unwrapDefineVideoConfigCall(expression) {
+  if (isDefineVideoConfigCall(expression)) {
+    return expression
+  }
+
+  if (!isAstNode(expression)) {
+    return null
+  }
+
+  if (
+    expression.type === 'ParenthesizedExpression' ||
+    expression.type === 'TSAsExpression' ||
+    expression.type === 'TSSatisfiesExpression' ||
+    expression.type === 'TSNonNullExpression'
+  ) {
+    return unwrapDefineVideoConfigCall(expression.expression)
+  }
+
+  return null
+}
+
+/**
+ * @param {{ body: unknown[] }} program
+ * @returns {Array<any>}
+ */
+function collectDefineVideoConfigCalls(program) {
+  /** @type {Array<any>} */
+  const calls = []
+
+  for (const statement of program.body) {
+    if (!isAstNode(statement)) {
+      continue
+    }
+
+    if (statement.type === 'ExpressionStatement') {
+      const call = unwrapDefineVideoConfigCall(statement.expression)
+      if (call) calls.push(call)
+      continue
+    }
+
+    if (statement.type === 'VariableDeclaration') {
+      for (const declaration of statement.declarations) {
+        const call = unwrapDefineVideoConfigCall(declaration.init)
+        if (call) calls.push(call)
+      }
+      continue
+    }
+
+    if (statement.type === 'ExportDefaultDeclaration') {
+      const call = unwrapDefineVideoConfigCall(statement.declaration)
+      if (call) calls.push(call)
+    }
+  }
+
+  return calls
+}
+
+/**
+ * @param {unknown} keyNode
+ * @param {{ filename: string, source: string, contentStartOffset: number }} context
+ * @returns {string}
+  */
+function evaluateObjectKey(keyNode, context) {
+  if (!isAstNode(keyNode)) {
+    throw createParseError(context, 'defineVideoConfig() object keys must be static.', undefined)
+  }
+
+  if (keyNode.type === 'Identifier') {
+    return keyNode.name
+  }
+
+  if (keyNode.type === 'StringLiteral' || keyNode.type === 'NumericLiteral') {
+    return String(keyNode.value)
+  }
+
+  if (keyNode.type === 'TemplateLiteral' && keyNode.expressions.length === 0) {
+    return keyNode.quasis.map((quasi) => quasi.value.cooked ?? quasi.value.raw).join('')
+  }
+
+  throw createParseError(
+    context,
+    'defineVideoConfig() object keys must be plain identifiers or static strings.',
+    keyNode,
+    'Avoid computed keys and expressions in the macro payload.'
+  )
+}
+
+/**
+ * @param {unknown} node
+ * @param {{ filename: string, source: string, contentStartOffset: number }} context
+ * @returns {StaticConfigValue}
+ */
+function evaluateStaticNode(node, context) {
+  if (!isAstNode(node)) {
+    throw createParseError(context, 'defineVideoConfig() contains an unsupported value.', undefined)
+  }
+
+  if (
+    node.type === 'ParenthesizedExpression' ||
+    node.type === 'TSAsExpression' ||
+    node.type === 'TSSatisfiesExpression' ||
+    node.type === 'TSNonNullExpression'
+  ) {
+    return evaluateStaticNode(node.expression, context)
+  }
+
+  switch (node.type) {
+    case 'StringLiteral':
+    case 'NumericLiteral':
+    case 'BooleanLiteral':
+      return node.value
+
+    case 'NullLiteral':
+      return null
+
+    case 'TemplateLiteral':
+      if (node.expressions.length > 0) {
+        throw createParseError(
+          context,
+          'defineVideoConfig() template strings must be fully static.',
+          node,
+          'Replace interpolated templates with a plain string literal.'
+        )
+      }
+      return node.quasis.map((quasi) => quasi.value.cooked ?? quasi.value.raw).join('')
+
+    case 'UnaryExpression':
+      if ((node.operator === '-' || node.operator === '+') && isAstNode(node.argument) && node.argument.type === 'NumericLiteral') {
+        return node.operator === '-' ? -node.argument.value : node.argument.value
+      }
+      throw createParseError(
+        context,
+        `defineVideoConfig() does not support the unary operator "${node.operator}".`,
+        node,
+        'Use plain static numbers, strings, booleans, null, arrays, or object literals.'
+      )
+
+    case 'ArrayExpression':
+      return node.elements.map((element) => {
+        if (element === null) {
+          throw createParseError(
+            context,
+            'defineVideoConfig() arrays cannot contain holes.',
+            node,
+            'Provide an explicit value for every array entry.'
+          )
+        }
+
+        if (isAstNode(element) && element.type === 'SpreadElement') {
+          throw createParseError(
+            context,
+            'defineVideoConfig() does not support spread syntax inside arrays.',
+            element,
+            'Expand the array to explicit static values.'
+          )
+        }
+
+        return evaluateStaticNode(element, context)
+      })
+
+    case 'ObjectExpression': {
+      /** @type {StaticConfigObject} */
+      const value = {}
+
+      for (const property of node.properties) {
+        if (!isAstNode(property)) {
+          throw createParseError(context, 'defineVideoConfig() contains an unsupported object property.', node)
+        }
+
+        if (property.type === 'SpreadElement') {
+          throw createParseError(
+            context,
+            'defineVideoConfig() does not support spread syntax inside objects.',
+            property,
+            'Write out each property explicitly so the config stays static.'
+          )
+        }
+
+        if (property.type !== 'ObjectProperty') {
+          throw createParseError(
+            context,
+            'defineVideoConfig() only supports plain object properties.',
+            property,
+            'Remove methods, getters, and setters from the macro payload.'
+          )
+        }
+
+        if (property.computed) {
+          throw createParseError(
+            context,
+            'defineVideoConfig() does not support computed property keys.',
+            property,
+            'Use plain identifiers or quoted string keys instead.'
+          )
+        }
+
+        const key = evaluateObjectKey(property.key, context)
+        value[key] = evaluateStaticNode(property.value, context)
+      }
+
+      return value
+    }
+
+    default:
+      throw createParseError(
+        context,
+        `defineVideoConfig() does not support ${node.type} values.`,
+        node,
+        'Use only static strings, numbers, booleans, null, arrays, and object literals.'
+      )
+  }
+}
+
 /**
  * Extract video config from a .vue file.
  *
@@ -41,66 +360,84 @@ const DEFINE_VIDEO_CONFIG_RUNTIME = `((config) => {
  */
 export function extractVideoConfig(filePath) {
   const source = readFileSync(filePath, 'utf-8')
-  return extractVideoConfigFromSource(source)
+  return extractVideoConfigFromSource(source, { filename: filePath })
 }
 
 /**
  * Extract video config from Vue SFC source code.
  *
  * @param {string} source
+ * @param {{ filename?: string }} [options]
  * @returns {VideoConfigLiteral | null}
  */
-export function extractVideoConfigFromSource(source) {
-  // Extract <script setup> content with a regex instead of pulling in
-  // the full @vue/compiler-sfc parser. The block can't nest, so this
-  // is reliable and avoids a heavy dependency.
-  const scriptSetupMatch = source.match(/<script\s+setup[^>]*>([\s\S]*?)<\/script>/)
-  if (!scriptSetupMatch) return null
+export function extractVideoConfigFromSource(source, options = {}) {
+  const filename = options.filename || 'Video.vue'
+  const { descriptor, errors } = parseSfc(source, { filename })
 
-  const match = scriptSetupMatch[1].match(/defineVideoConfig\s*\(\s*(\{[\s\S]*?\})\s*\)/)
-  if (!match) return null
+  if (errors.length > 0) {
+    const firstError = errors[0]
+    const message = firstError instanceof Error ? firstError.message : String(firstError)
+    throw new DefineVideoConfigParseError(`Failed to parse Vue component. ${message}`, { filename })
+  }
 
-  try {
-    return parseObjectLiteral(match[1])
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.warn(`Failed to parse defineVideoConfig: ${message}`)
+  const scriptSetup = descriptor.scriptSetup
+  if (!scriptSetup) {
     return null
   }
-}
 
-/**
- * Parse a static object literal string.
- *
- * @param {string} str
- * @returns {VideoConfigLiteral}
- */
-function parseObjectLiteral(str) {
-  const trimmed = str.trim()
-  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
-    throw new Error('Not an object literal')
+  const contentStartOffset = source.indexOf(scriptSetup.content, scriptSetup.loc.start.offset)
+  const context = {
+    filename,
+    source,
+    contentStartOffset: contentStartOffset >= 0 ? contentStartOffset : scriptSetup.loc.start.offset
   }
 
-  /** @type {Record<string, string | number | boolean | undefined>} */
-  const config = {}
-  const regex = /(\w+)\s*:\s*(-?\d+(?:\.\d+)?|true|false|'[^']*'|"[^"]*")/g
-  let match
-
-  while ((match = regex.exec(trimmed)) !== null) {
-    const key = match[1]
-    const rawValue = match[2]
-    /** @type {string | number | boolean} */
-    let value
-
-    if (rawValue === 'true') value = true
-    else if (rawValue === 'false') value = false
-    else if (rawValue.startsWith("'") || rawValue.startsWith('"')) value = rawValue.slice(1, -1)
-    else value = parseFloat(rawValue)
-
-    config[key] = value
+  let scriptAst
+  try {
+    scriptAst = parseScript(scriptSetup.content, {
+      sourceType: 'module',
+      plugins: getScriptParserPlugins(scriptSetup.lang)
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new DefineVideoConfigParseError(`Failed to parse <script setup>. ${message}`, { filename })
   }
 
-  return /** @type {VideoConfigLiteral} */ (config)
+  const calls = collectDefineVideoConfigCalls(scriptAst.program)
+  if (calls.length === 0) {
+    return null
+  }
+
+  if (calls.length > 1) {
+    throw createParseError(
+      context,
+      'defineVideoConfig() can only be called once per component.',
+      calls[1],
+      'Keep a single top-level macro call and merge the config into one object.'
+    )
+  }
+
+  const [call] = calls
+  if (call.arguments.length !== 1) {
+    throw createParseError(
+      context,
+      'defineVideoConfig() expects exactly one argument.',
+      call,
+      'Pass a single static object literal to the macro.'
+    )
+  }
+
+  const value = evaluateStaticNode(call.arguments[0], context)
+  if (!value || Array.isArray(value) || typeof value !== 'object') {
+    throw createParseError(
+      context,
+      'defineVideoConfig() expects a static object literal.',
+      call.arguments[0],
+      'Wrap the config in `{}` and keep every value static.'
+    )
+  }
+
+  return /** @type {VideoConfigLiteral} */ (value)
 }
 
 /**

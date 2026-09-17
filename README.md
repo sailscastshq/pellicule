@@ -1,7 +1,5 @@
 # Pellicule
 
-[![Fund my work on FLOSSAfrica](https://flossafrica.com/badge.svg)](https://flossafrica.com/m/dominuskelvin?p=pellicule)
-
 Deterministic video rendering with Vue.
 
 <video src="https://github.com/sailscastshq/pellicule/blob/3043cee432769ac0ced2fd56228852a026856040/.github/pellicule.mp4" autoplay loop muted playsinline></video>

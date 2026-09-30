@@ -30,10 +30,9 @@ const pelliculeSrc = resolve(__dirname, '..')
  *
  * @param {string} configFile - Absolute path to the config file
  * @param {'rsbuild'|'shipwright'} projectType
- * @param {(options: { cwd: string, path: string }) => Promise<{ content?: object }>} loadConfig
  * @returns {Promise<object>} Rsbuild config object
  */
-async function loadUserConfig(configFile, projectType, loadConfig) {
+async function loadUserConfig(configFile, projectType) {
   if (projectType === 'shipwright') {
     // Shipwright configs are CommonJS: module.exports.shipwright = { build: { ... } }
     const require = createRequire(import.meta.url)
@@ -42,7 +41,9 @@ async function loadUserConfig(configFile, projectType, loadConfig) {
   }
 
   // Standalone rsbuild.config.js — use Rsbuild's own config loader
-  const { content } = await loadConfig({ cwd: dirname(configFile), path: configFile })
+  // @ts-expect-error Rsbuild is an optional peer dependency and may not be installed in this workspace.
+  const { loadConfig } = await import('@rsbuild/core')
+  const { content } = await loadConfig({ cwd: dirname(configFile) })
   return content || {}
 }
 
@@ -74,13 +75,11 @@ export async function createVideoServer(options) {
   let createRsbuild
   /** @type {((base: object, extra: object) => object) | undefined} */
   let mergeRsbuildConfig
-  let loadConfig
   try {
     const rsbuildCorePath = projectRequire.resolve('@rsbuild/core')
     const rsbuildCore = await import(rsbuildCorePath)
     createRsbuild = rsbuildCore.createRsbuild
     mergeRsbuildConfig = rsbuildCore.mergeRsbuildConfig
-    loadConfig = rsbuildCore.loadConfig
   } catch {
     throw new Error(
       'Rsbuild is required but not installed.\n' +
@@ -174,7 +173,7 @@ export async function createVideoServer(options) {
 
   // If the user has a config file, load and merge it
   if (configFile) {
-    const userConfig = await loadUserConfig(configFile, rsbuildProjectType, loadConfig)
+    const userConfig = await loadUserConfig(configFile, rsbuildProjectType)
 
     if (userConfig && Object.keys(userConfig).length > 0) {
       // User config is the base, Pellicule config merges on top

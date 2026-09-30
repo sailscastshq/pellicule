@@ -561,14 +561,18 @@ export function pelliculeMacroVitePlugin() {
 /**
  * Rsbuild plugin that strips defineVideoConfig() calls.
  *
- * source.define replaces the
+ * Rsbuild's api.transform() runs AFTER built-in loaders, which means
+ * vue-loader has already compiled the <script setup> block by the time
+ * our transform runs. The raw .vue source is split into sub-modules
+ * and our regex may never see the actual defineVideoConfig() call.
+ *
+ * To handle this reliably, we use source.define to replace the
  * defineVideoConfig identifier with a no-op function at compile time
  * via Rspack's DefinePlugin. This runs during Rspack's compilation
  * phase (after all loaders) and replaces free identifiers in the AST.
  *
- * A pre-loader transform removes explicit macro imports before Vue compiles.
- * Marking it as pre also prevents VueLoaderPlugin from mistaking this
- * transform's .vue rule for the actual Vue loader rule in Rsbuild 2.
+ * The api.transform() is kept as a belt-and-suspenders measure —
+ * if it manages to strip the call from the raw source, even better.
  *
  * @returns {object}
  */
@@ -585,8 +589,8 @@ export function pelliculeMacroRsbuildPlugin() {
         config.source.define.defineVideoConfig = DEFINE_VIDEO_CONFIG_RUNTIME
       })
 
-      // Remove explicit imports before the Vue loader sees the source.
-      api.transform({ test: /\.vue$/, order: 'pre' }, ({ code }) => {
+      // Also attempt to strip the call from .vue source directly.
+      api.transform({ test: /\.vue$/ }, ({ code }) => {
         const result = stripDefineVideoConfig(code)
         return result !== null ? result : code
       })

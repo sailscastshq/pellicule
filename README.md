@@ -119,6 +119,25 @@ The rendering is deterministic - the same component produces the exact same vide
 - FFmpeg installed and in PATH
 - Vue 3.x
 
+## Rsbuild 2 / Shipwright
+
+The Rsbuild adapter requires `@rsbuild/core ^2.2.5` and `@rsbuild/plugin-vue ^2.0.1`. Upgrade both together:
+
+```bash
+npm install -D @rsbuild/core@^2.2.5 @rsbuild/plugin-vue@^2.0.1
+```
+
+Rsbuild 2 requires Node.js `^20.19.0 || >=22.12.0`. Rsbuild 1 is no longer supported by this adapter. Vite-based projects keep their existing build path.
+
+Render the checked-in Rsbuild demo from the repository root:
+
+```bash
+npm ci
+node packages/core/bin/cli.js examples/rsbuild/Video.vue --bundler rsbuild --config examples/rsbuild/video.config.mjs --quality high -o rsbuild-demo.mp4
+```
+
+See [the demo notes](examples/rsbuild/README.md) for reproduction and [release preparation](RELEASE_NOTES.md) for migration details.
+
 ## Documentation
 
 https://docs.sailscasts.com/pellicule

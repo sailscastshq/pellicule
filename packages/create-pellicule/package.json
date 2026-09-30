@@ -1,6 +1,6 @@
 {
   "name": "create-pellicule",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Scaffold a new Pellicule video project",
   "type": "module",
   "bin": {
